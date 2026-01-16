@@ -21,4 +21,6 @@ public final class MapperConsts {
 
     /** Optimistic lock old version parameter name. */
     public static final String VERSION_OLD = "version_old";
+
+    public static final String IDS = "ids";
 }

@@ -1,5 +1,6 @@
 //package com.ngcin.ems.mapper;
 //
+//import com.ngcin.ems.mapper.core.KeyPropertyInterceptor;
 //import com.ngcin.ems.mapper.core.PaginationInterceptor;
 //import org.mybatis.spring.boot.autoconfigure.ConfigurationCustomizer;
 //import org.slf4j.Logger;
@@ -28,7 +29,9 @@
 //            properties.setProperty("dialect", dialect);
 //            pageInterceptor.setProperties(properties);
 //            configuration.addInterceptor(pageInterceptor);
-//            //configuration.setObjectWrapperFactory(new DataMapWrapperFactory());
+//
+//            // Register KeyPropertyInterceptor to support custom ID field names
+//            configuration.addInterceptor(new KeyPropertyInterceptor());
 //        };
 //    }
 //}

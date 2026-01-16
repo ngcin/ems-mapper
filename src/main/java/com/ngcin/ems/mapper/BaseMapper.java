@@ -1,38 +1,56 @@
 package com.ngcin.ems.mapper;
 
+import com.ngcin.ems.mapper.core.MapperConsts;
 import org.apache.ibatis.annotations.*;
 
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.List;
 
 public interface BaseMapper<T> {
-
-//    @SelectProvider(type = BaseMapperProvider.class, method = "getById")
-//    T getById(Serializable id);
 
     @InsertProvider(type = BaseMapperProvider.class, method = "insert")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(T entity);
 
-//    @UpdateProvider(type = BaseMapperProvider.class, method = "updateById")
-//    int updateById(T entity);
-//
-//    @DeleteProvider(type = BaseMapperProvider.class, method = "physicalDeleteById")
-//    int physicalDeleteById(Serializable id);
-//
-//    @DeleteProvider(type = BaseMapperProvider.class, method = "deleteById")
-//    int deleteById(Serializable id);
-//
-//    @SelectProvider(type = BaseMapperProvider.class, method = "selectAll")
-//    List<T> selectAll();
-//
-//    @SelectProvider(type = BaseMapperProvider.class, method = "select")
-//    List<T> select(T entity);
-//
-//    @DeleteProvider(type = BaseMapperProvider.class, method = "logicDeleteByEntity")
-//    int delete(T entity);
-//
-//    @DeleteProvider(type = BaseMapperProvider.class, method = "physicalDelete")
-//    int physicalDelete(T entity);
+    @InsertProvider(type = BaseMapperProvider.class, method = "insertSelective")
+    @Options(useGeneratedKeys = true, keyProperty = "id")
+    int insertSelective(T entity);
+
+    @UpdateProvider(type = BaseMapperProvider.class, method = "updateById")
+    int updateById(T entity);
+
+    @UpdateProvider(type = BaseMapperProvider.class, method = "updateSelectiveById")
+    int updateSelectiveById(@Param("entity") T entity);
+
+    @SelectProvider(type = BaseMapperProvider.class, method = "getById")
+    T getById(@Param("id") Serializable id);
+
+    @SelectProvider(type = BaseMapperProvider.class, method = "selectCount")
+    long selectCount(@Param(MapperConsts.ENTITY_WHERE) T queryEntity);
+
+    @SelectProvider(type = BaseMapperProvider.class, method = "selectBatchIds")
+    List<T> selectBatchIds(@Param("ids") Collection<Serializable> ids);
+
+    @SelectProvider(type = BaseMapperProvider.class, method = "selectAll")
+    List<T> selectAll();
+
+    @SelectProvider(type = BaseMapperProvider.class, method = "selectList")
+    List<T> selectList(@Param(MapperConsts.ENTITY_WHERE) T query);
+
+    @SelectProvider(type = BaseMapperProvider.class, method = "selectOne")
+    T selectOne(@Param(MapperConsts.ENTITY_WHERE) T query);
+
+    @UpdateProvider(type = BaseMapperProvider.class, method = "deleteById")
+    int deleteById(@Param("id") Serializable id);
+
+    @DeleteProvider(type = BaseMapperProvider.class, method = "removeById")
+    int removeById(@Param("id") Serializable id);
+
+    @UpdateProvider(type = BaseMapperProvider.class, method = "delete")
+    int delete(@Param(MapperConsts.ENTITY_WHERE) T entity);
+
+    @DeleteProvider(type = BaseMapperProvider.class, method = "remove")
+    int remove(@Param(MapperConsts.ENTITY_WHERE) T entity);
 
 }
