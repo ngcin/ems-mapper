@@ -66,14 +66,22 @@ public class EntityClassResolver {
 
         String tableName = tableAnnotation.value();
 
-        Field[] declaredFields = entityClass.getDeclaredFields();
+        // Collect fields from entire class hierarchy
+        List<Field> allDeclaredFields = new ArrayList<>();
+        Class<?> currentClass = entityClass;
+        while (currentClass != null && currentClass != Object.class) {
+            Field[] declaredFields = currentClass.getDeclaredFields();
+            allDeclaredFields.addAll(Arrays.asList(declaredFields));
+            currentClass = currentClass.getSuperclass();
+        }
+
         TableFieldInfo idField = null;
         TableFieldInfo versionField = null;
         TableFieldInfo deletedField = null;
         List<TableFieldInfo> allFields = new ArrayList<>();
         List<TableFieldInfo> uniqueFields = new ArrayList<>();
 
-        for (Field field : declaredFields) {
+        for (Field field : allDeclaredFields) {
             field.setAccessible(true);
 
             if (field.isAnnotationPresent(Ignore.class)) {
