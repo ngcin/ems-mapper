@@ -14,6 +14,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * Base mapper provider using org.apache.ibatis.jdbc.SQL for clean SQL generation.
@@ -38,17 +40,11 @@ public class BaseMapperProvider extends SqlProvider {
         Class<?> entityClass = entity.getClass();
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
-        // Initialize entity fields (ID, version, soft delete)
         initializeEntityForInsert(entity, tableInfo);
 
         SQL sql = new SQL().INSERT_INTO(tableInfo.tableName());
+        addIdFieldIfNeeded(sql, tableInfo);
 
-        // Add ID field if not AUTO type
-        if (tableInfo.idField() != null && tableInfo.idField().idType() != IdType.AUTO) {
-            sql.VALUES(tableInfo.idField().column(), buildValuePlaceholder(tableInfo.idField()));
-        }
-
-        // Add only non-null fields
         for (TableFieldInfo fieldInfo : tableInfo.getNonIdFields()) {
             Object value = getFieldValue(fieldInfo.field(), entity);
             if (value != null) {
@@ -71,17 +67,11 @@ public class BaseMapperProvider extends SqlProvider {
         Class<?> entityClass = entity.getClass();
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
-        // Initialize entity fields (ID, version, soft delete)
         initializeEntityForInsert(entity, tableInfo);
 
         SQL sql = new SQL().INSERT_INTO(tableInfo.tableName());
+        addIdFieldIfNeeded(sql, tableInfo);
 
-        // Add ID field if not AUTO type
-        if (tableInfo.idField() != null && tableInfo.idField().idType() != IdType.AUTO) {
-            sql.VALUES(tableInfo.idField().column(), buildValuePlaceholder(tableInfo.idField()));
-        }
-
-        // Add all non-ID fields
         for (TableFieldInfo fieldInfo : tableInfo.getNonIdFields()) {
             sql.VALUES(fieldInfo.column(), buildValuePlaceholder(fieldInfo));
         }
@@ -108,7 +98,6 @@ public class BaseMapperProvider extends SqlProvider {
      * @throws IllegalArgumentException if the list is null or empty
      */
     public String insertBatch(Map<String, Object> params, ProviderContext context) {
-        // Extract and validate parameters
         @SuppressWarnings("unchecked")
         List<Object> entities = (List<Object>) params.get("list");
 
@@ -116,56 +105,30 @@ public class BaseMapperProvider extends SqlProvider {
             throw new IllegalArgumentException("Batch insert list cannot be null or empty");
         }
 
-        // Get entity metadata
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
-        // Initialize all entities (ID, version, soft delete)
         for (Object entity : entities) {
             initializeEntityForInsert(entity, tableInfo);
         }
 
-        // Collect fields to insert (non-@Ignore fields)
         List<TableFieldInfo> insertFields = new ArrayList<>();
-
-        // Add ID field if not AUTO type
-        TableFieldInfo idField = tableInfo.idField();
-        if (idField != null && idField.idType() != IdType.AUTO) {
-            insertFields.add(idField);
+        if (tableInfo.idField() != null && tableInfo.idField().idType() != IdType.AUTO) {
+            insertFields.add(tableInfo.idField());
         }
-
-        // Add all non-ID fields
         insertFields.addAll(tableInfo.getNonIdFields());
 
-        // Build batch INSERT SQL
-        StringBuilder sql = new StringBuilder();
-        sql.append("INSERT INTO ").append(tableInfo.tableName()).append(" (");
+        String columns = insertFields.stream()
+                .map(TableFieldInfo::column)
+                .collect(Collectors.joining(", "));
 
-        // Column names
-        for (int i = 0; i < insertFields.size(); i++) {
-            if (i > 0) sql.append(", ");
-            sql.append(insertFields.get(i).column());
-        }
-        sql.append(") VALUES ");
+        String values = IntStream.range(0, entities.size())
+                .mapToObj(i -> "(" + insertFields.stream()
+                        .map(f -> "#{list[" + i + "]." + f.getProperty() + "}")
+                        .collect(Collectors.joining(", ")) + ")")
+                .collect(Collectors.joining(", "));
 
-        // VALUES clauses - one per entity
-        for (int entityIndex = 0; entityIndex < entities.size(); entityIndex++) {
-            if (entityIndex > 0) sql.append(", ");
-            sql.append("(");
-
-            for (int fieldIndex = 0; fieldIndex < insertFields.size(); fieldIndex++) {
-                if (fieldIndex > 0) sql.append(", ");
-                TableFieldInfo field = insertFields.get(fieldIndex);
-
-                // Use indexed placeholder: #{list[0].propertyName}
-                sql.append("#{list[").append(entityIndex).append("].")
-                   .append(field.getProperty()).append("}");
-            }
-
-            sql.append(")");
-        }
-
-        return sql.toString();
+        return "INSERT INTO " + tableInfo.tableName() + " (" + columns + ") VALUES " + values;
     }
 
     /**
@@ -181,10 +144,8 @@ public class BaseMapperProvider extends SqlProvider {
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
         requireIdField(tableInfo);
 
-        SQL sql = new SQL()
-                .UPDATE(tableInfo.tableName());
+        SQL sql = new SQL().UPDATE(tableInfo.tableName());
 
-        // Add SET clauses for all non-ID, non-version, non-deleted fields
         for (TableFieldInfo fieldInfo : tableInfo.getNonIdFields()) {
             if (fieldInfo.isVersion() || fieldInfo.isDeleted()) {
                 continue;
@@ -192,26 +153,19 @@ public class BaseMapperProvider extends SqlProvider {
             sql.SET(buildSetClause(fieldInfo, null));
         }
 
-        // Handle version field for optimistic locking
         if (tableInfo.hasVersion()) {
             TableFieldInfo versionField = tableInfo.versionField();
             Object currentVersion = getFieldValue(versionField.field(), entity);
-
             if (currentVersion == null) {
                 throw new MapperException("Version field cannot be null for optimistic locking");
             }
-
-            sql.SET(versionField.column() + " = " + versionField.column() + " + 1");
+            applyVersionIncrement(sql, versionField);
         }
 
-        // WHERE clause
-        TableFieldInfo idField = tableInfo.idField();
-        sql.WHERE(buildWhereClause(idField, null));
+        sql.WHERE(buildWhereClause(tableInfo.idField(), null));
 
-        // Add version check in WHERE clause for optimistic locking
         if (tableInfo.hasVersion()) {
-            TableFieldInfo versionField = tableInfo.versionField();
-            sql.WHERE(buildWhereClause(versionField, null));
+            sql.WHERE(buildWhereClause(tableInfo.versionField(), null));
         }
 
         return sql.toString();
@@ -228,10 +182,8 @@ public class BaseMapperProvider extends SqlProvider {
         Class<?> entityClass = entity.getClass();
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
-        SQL sql = new SQL()
-                .UPDATE(tableInfo.tableName());
+        SQL sql = new SQL().UPDATE(tableInfo.tableName());
 
-        // Add SET clauses for non-null fields only
         for (TableFieldInfo fieldInfo : tableInfo.getNonIdFields()) {
             if (fieldInfo.isVersion() || fieldInfo.isDeleted()) {
                 continue;
@@ -243,26 +195,19 @@ public class BaseMapperProvider extends SqlProvider {
             }
         }
 
-        // Handle version field for optimistic locking
         if (tableInfo.hasVersion()) {
             TableFieldInfo versionField = tableInfo.versionField();
             Object currentVersion = getFieldValue(versionField.field(), entity);
-
             if (currentVersion == null) {
                 throw new MapperException("Version field cannot be null for optimistic locking");
             }
-
-            sql.SET(versionField.column() + " = " + versionField.column() + " + 1");
+            applyVersionIncrement(sql, versionField);
         }
 
-        // WHERE clause
-        TableFieldInfo idField = tableInfo.idField();
-        sql.WHERE(buildWhereClause(idField, "entity"));
+        sql.WHERE(buildWhereClause(tableInfo.idField(), "entity"));
 
-        // Add version check in WHERE clause for optimistic locking
         if (tableInfo.hasVersion()) {
-            TableFieldInfo versionField = tableInfo.versionField();
-            sql.WHERE(buildWhereClause(versionField, "entity"));
+            sql.WHERE(buildWhereClause(tableInfo.versionField(), "entity"));
         }
 
         return sql.toString();
@@ -282,17 +227,7 @@ public class BaseMapperProvider extends SqlProvider {
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
         requireIdField(tableInfo);
 
-        SQL sql = new SQL()
-                .SELECT(buildSelectColumns(tableInfo))
-                .FROM(tableInfo.tableName());
-
-        // Add soft delete condition
-        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
-        if (softDeleteWhere != null) {
-            sql.WHERE(softDeleteWhere);
-        }
-
-        // Add ID condition
+        SQL sql = buildSelectBase(tableInfo);
         sql.WHERE(tableInfo.idField().column() + " = #{id}");
 
         return sql.toString();
@@ -309,24 +244,13 @@ public class BaseMapperProvider extends SqlProvider {
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
-        // Extract entity from parameters
         Object entity = params.get(MapperConsts.ENTITY_WHERE);
 
         SQL sql = new SQL()
                 .SELECT("COUNT(*)")
                 .FROM(tableInfo.tableName());
 
-        // Add soft delete condition
-        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
-        if (softDeleteWhere != null) {
-            sql.WHERE(softDeleteWhere);
-        }
-
-        // Add conditions from non-null entity fields
-        String[] entityWheres = buildEntityWheres(tableInfo, entity);
-        if (entityWheres.length > 0) {
-            sql.WHERE(entityWheres);
-        }
+        addEntityConditions(sql, tableInfo, entity);
 
         return sql.toString();
     }
@@ -345,7 +269,6 @@ public class BaseMapperProvider extends SqlProvider {
         @SuppressWarnings("unchecked")
         Collection<Serializable> ids = (Collection<Serializable>) params.get("ids");
 
-        // Handle empty collection - return query that returns no results
         if (ids == null || ids.isEmpty()) {
             return new SQL()
                     .SELECT(buildSelectColumns(tableInfo))
@@ -354,17 +277,7 @@ public class BaseMapperProvider extends SqlProvider {
                     .toString();
         }
 
-        SQL sql = new SQL()
-                .SELECT(buildSelectColumns(tableInfo))
-                .FROM(tableInfo.tableName());
-
-        // Add soft delete condition
-        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
-        if (softDeleteWhere != null) {
-            sql.WHERE(softDeleteWhere);
-        }
-
-        // Add IN condition
+        SQL sql = buildSelectBase(tableInfo);
         sql.WHERE(buildInCondition(tableInfo.idField().column(), ids));
 
         return sql.toString();
@@ -380,17 +293,7 @@ public class BaseMapperProvider extends SqlProvider {
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
-        SQL sql = new SQL()
-                .SELECT(buildSelectColumns(tableInfo))
-                .FROM(tableInfo.tableName());
-
-        // Add soft delete condition
-        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
-        if (softDeleteWhere != null) {
-            sql.WHERE(softDeleteWhere);
-        }
-
-        // Add LIMIT using helper method
+        SQL sql = buildSelectBase(tableInfo);
         return appendLimit(sql.toString(), DEFAULT_SELECT_ALL_LIMIT);
     }
 
@@ -405,24 +308,13 @@ public class BaseMapperProvider extends SqlProvider {
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
-        // Extract entity from parameters
         Object entity = params.get(MapperConsts.ENTITY_WHERE);
 
         SQL sql = new SQL()
                 .SELECT(buildSelectColumns(tableInfo))
                 .FROM(tableInfo.tableName());
 
-        // Add soft delete condition
-        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
-        if (softDeleteWhere != null) {
-            sql.WHERE(softDeleteWhere);
-        }
-
-        // Add conditions from non-null entity fields
-        String[] entityWheres = buildEntityWheres(tableInfo, entity);
-        if (entityWheres.length > 0) {
-            sql.WHERE(entityWheres);
-        }
+        addEntityConditions(sql, tableInfo, entity);
 
         return sql.toString();
     }
@@ -438,26 +330,14 @@ public class BaseMapperProvider extends SqlProvider {
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
-        // Extract entity from parameters
         Object entity = params.get(MapperConsts.ENTITY_WHERE);
 
         SQL sql = new SQL()
                 .SELECT(buildSelectColumns(tableInfo))
                 .FROM(tableInfo.tableName());
 
-        // Add soft delete condition
-        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
-        if (softDeleteWhere != null) {
-            sql.WHERE(softDeleteWhere);
-        }
+        addEntityConditions(sql, tableInfo, entity);
 
-        // Add conditions from non-null entity fields
-        String[] entityWheres = buildEntityWheres(tableInfo, entity);
-        if (entityWheres.length > 0) {
-            sql.WHERE(entityWheres);
-        }
-
-        // Add LIMIT 1 using helper method
         return appendLimit(sql.toString(), 1);
     }
 
@@ -518,7 +398,6 @@ public class BaseMapperProvider extends SqlProvider {
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
-        // Check if table supports logical delete
         if (!tableInfo.hasLogicDelete()) {
             throw new MapperException("Entity " + entityClass.getSimpleName() +
                     " does not support logical delete. Use remove instead.");
@@ -532,11 +411,7 @@ public class BaseMapperProvider extends SqlProvider {
                 .SET(deletedField.column() + " = " + deletedField.deletedValue())
                 .WHERE(deletedField.column() + " = " + deletedField.notDeletedValue());
 
-        // Add conditions from non-null entity fields
-        String[] entityWheres = buildEntityWheres(tableInfo, entity);
-        if (entityWheres.length > 0) {
-            sql.WHERE(entityWheres);
-        }
+        addEntityConditions(sql, tableInfo, entity);
 
         return sql.toString();
     }
@@ -557,11 +432,7 @@ public class BaseMapperProvider extends SqlProvider {
         SQL sql = new SQL()
                 .DELETE_FROM(tableInfo.tableName());
 
-        // Add conditions from non-null entity fields
-        String[] entityWheres = buildEntityWheres(tableInfo, entity);
-        if (entityWheres.length > 0) {
-            sql.WHERE(entityWheres);
-        }
+        addEntityConditions(sql, tableInfo, entity);
 
         return sql.toString();
     }
@@ -583,19 +454,7 @@ public class BaseMapperProvider extends SqlProvider {
                 .SELECT(buildSelectColumns(tableInfo))
                 .FROM(tableInfo.tableName());
 
-        // Add soft delete condition
-        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
-        if (softDeleteWhere != null) {
-            sql.WHERE(softDeleteWhere);
-        }
-
-        // Add conditions from non-null entity fields if provided
-        if (entity != null) {
-            String[] entityWheres = buildEntityWheres(tableInfo, entity);
-            if (entityWheres.length > 0) {
-                sql.WHERE(entityWheres);
-            }
-        }
+        addEntityConditions(sql, tableInfo, entity);
 
         return sql.toString();
     }

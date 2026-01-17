@@ -22,6 +22,7 @@ public class SqlProvider {
     private static final AtomicLong SNOWFLAKE_COUNTER = new AtomicLong(0);
     private static final long EPOCH = 1609459200000L; // 2021-01-01 00:00:00 UTC
     protected static final int DEFAULT_SELECT_ALL_LIMIT = 1000;
+    private static final String VERSION_INCREMENT = " = %s + 1";
 
     /**
      * Builds SELECT columns as String array for SQL class.
@@ -202,13 +203,9 @@ public class SqlProvider {
 
         TableFieldInfo versionField = tableInfo.versionField();
         Object currentVersion = getFieldValue(versionField.field(), entity);
-
         requireNonNull(currentVersion, "Version field for optimistic locking");
 
-        // Increment version in SET clause
-        sql.SET(versionField.column() + " = " + versionField.column() + " + 1");
-
-        // Add version check in WHERE clause
+        applyVersionIncrement(sql, versionField);
         sql.WHERE(buildWhereClause(versionField, prefix));
     }
 
@@ -222,6 +219,49 @@ public class SqlProvider {
      */
     protected String appendLimit(String sql, int limit) {
         return sql + " LIMIT " + limit;
+    }
+
+    /**
+     * Adds ID field to INSERT statement if not AUTO type.
+     *
+     * @param sql the SQL builder
+     * @param tableInfo the table metadata
+     */
+    protected void addIdFieldIfNeeded(SQL sql, TableInfo tableInfo) {
+        if (tableInfo.idField() != null && tableInfo.idField().idType() != IdType.AUTO) {
+            sql.VALUES(tableInfo.idField().column(), buildValuePlaceholder(tableInfo.idField()));
+        }
+    }
+
+    /**
+     * Applies version increment to SET clause.
+     *
+     * @param sql the SQL builder
+     * @param versionField the version field metadata
+     */
+    protected void applyVersionIncrement(SQL sql, TableFieldInfo versionField) {
+        sql.SET(versionField.column() + String.format(VERSION_INCREMENT, versionField.column()));
+    }
+
+    /**
+     * Adds entity conditions (soft delete + non-null fields) to SELECT/UPDATE/DELETE.
+     *
+     * @param sql the SQL builder
+     * @param tableInfo the table metadata
+     * @param entity the entity object (may be null for some operations)
+     */
+    protected void addEntityConditions(SQL sql, TableInfo tableInfo, Object entity) {
+        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
+        if (softDeleteWhere != null) {
+            sql.WHERE(softDeleteWhere);
+        }
+
+        if (entity != null) {
+            String[] entityWheres = buildEntityWheres(tableInfo, entity);
+            if (entityWheres.length > 0) {
+                sql.WHERE(entityWheres);
+            }
+        }
     }
 
     /**
