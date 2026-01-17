@@ -5,12 +5,10 @@ import com.ngcin.ems.test.entity.Article;
 import com.ngcin.ems.test.entity.User;
 import com.ngcin.ems.test.mapper.ArticleMapper;
 import com.ngcin.ems.test.mapper.UserMapper;
-import org.apache.ibatis.mapping.Environment;
 import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.ibatis.session.SqlSessionFactoryBuilder;
-import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.*;
 
 import java.io.ByteArrayInputStream;
@@ -21,9 +19,9 @@ import java.sql.ResultSet;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test cases for remove by ID (removeById method).
+ * Test cases for remove by ID (hardDeleteById method).
  */
-public class RemoveByIdTest {
+public class HardDeleteByIdTest {
 
     private static SqlSessionFactory sqlSessionFactory;
     private SqlSession sqlSession;
@@ -102,7 +100,7 @@ public class RemoveByIdTest {
         assertNotNull(id);
 
         // Remove by ID
-        int result = articleMapper.removeById(id);
+        int result = articleMapper.hardDeleteById(id);
         assertEquals(1, result);
 
         // Verify article is completely removed from database
@@ -127,7 +125,7 @@ public class RemoveByIdTest {
         Long id = user.getId();
 
         // Remove should work for entities without soft delete
-        int result = userMapper.removeById(id);
+        int result = userMapper.hardDeleteById(id);
         assertEquals(1, result);
 
         // Verify user is completely removed
@@ -144,7 +142,7 @@ public class RemoveByIdTest {
     @Test
     public void testRemoveById_NonExistentId() {
         // Try to delete non-existent ID
-        int result = articleMapper.removeById(99999L);
+        int result = articleMapper.hardDeleteById(99999L);
         assertEquals(0, result);
     }
 
@@ -160,7 +158,7 @@ public class RemoveByIdTest {
         articleMapper.insert(article2);
 
         // Remove first article
-        int result = articleMapper.removeById(article1.getId());
+        int result = articleMapper.hardDeleteById(article1.getId());
         assertEquals(1, result);
 
         // Verify first article is removed

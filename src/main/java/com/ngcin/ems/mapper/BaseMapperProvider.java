@@ -355,7 +355,7 @@ public class BaseMapperProvider extends SqlProvider {
         // Check if table supports logical delete
         if (!tableInfo.hasLogicDelete()) {
             throw new MapperException("Entity " + entityClass.getSimpleName() +
-                    " does not support logical delete. Use removeById instead.");
+                    " does not support logical delete. Use hardDeleteById instead.");
         }
 
         TableFieldInfo deletedField = tableInfo.deletedField();
@@ -376,7 +376,7 @@ public class BaseMapperProvider extends SqlProvider {
      * @param context the provider context
      * @return the DELETE SQL statement
      */
-    public String removeById(Object id, ProviderContext context) {
+    public String hardDeleteById(Object id, ProviderContext context) {
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
@@ -400,7 +400,7 @@ public class BaseMapperProvider extends SqlProvider {
 
         if (!tableInfo.hasLogicDelete()) {
             throw new MapperException("Entity " + entityClass.getSimpleName() +
-                    " does not support logical delete. Use remove instead.");
+                    " does not support logical delete. Use hardDelete instead.");
         }
 
         Object entity = params.get(MapperConsts.ENTITY_WHERE);
@@ -423,7 +423,7 @@ public class BaseMapperProvider extends SqlProvider {
      * @param context the provider context
      * @return the DELETE SQL statement
      */
-    public String remove(Map<String, Object> params, ProviderContext context) {
+    public String hardDelete(Map<String, Object> params, ProviderContext context) {
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 

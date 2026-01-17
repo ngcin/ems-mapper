@@ -1,7 +1,6 @@
 package com.ngcin.ems.mapper;
 
 import com.ngcin.ems.mapper.core.MapperConsts;
-import com.ngcin.ems.mapper.core.Page;
 import org.apache.ibatis.annotations.*;
 
 import java.io.Serializable;
@@ -49,14 +48,14 @@ public interface BaseMapper<T> {
     @UpdateProvider(type = BaseMapperProvider.class, method = "deleteById")
     int deleteById(@Param("id") Serializable id);
 
-    @DeleteProvider(type = BaseMapperProvider.class, method = "removeById")
-    int removeById(@Param("id") Serializable id);
+    @DeleteProvider(type = BaseMapperProvider.class, method = "hardDeleteById")
+    int hardDeleteById(@Param("id") Serializable id);
 
     @UpdateProvider(type = BaseMapperProvider.class, method = "delete")
     int delete(@Param(MapperConsts.ENTITY_WHERE) T entity);
 
-    @DeleteProvider(type = BaseMapperProvider.class, method = "remove")
-    int remove(@Param(MapperConsts.ENTITY_WHERE) T entity);
+    @DeleteProvider(type = BaseMapperProvider.class, method = "hardDelete")
+    int hardDelete(@Param(MapperConsts.ENTITY_WHERE) T entity);
 
     @SelectProvider(type = BaseMapperProvider.class, method = "selectPage")
     List<T> selectPage(@Param(MapperConsts.PAGE) IPage<T> page, @Param(MapperConsts.ENTITY_WHERE) T query);

@@ -175,10 +175,10 @@ private Long id;
 
 | Method | Description |
 |--------|-------------|
-| `int deleteById(Serializable id)` | Delete by ID (physical delete) |
-| `int delete(T entity)` | Delete by query entity (physical delete) |
-| `int removeById(Serializable id)` | Remove by ID (logical delete with `@Deleted`) |
-| `int remove(T entity)` | Remove by query entity (logical delete with `@Deleted`) |
+| `int deleteById(Serializable id)` | Soft delete by ID (logical delete with `@Deleted`) |
+| `int delete(T entity)` | Soft delete by query entity (logical delete with `@Deleted`) |
+| `int hardDeleteById(Serializable id)` | Hard delete by ID (physical delete - removes from database) |
+| `int hardDelete(T entity)` | Hard delete by query entity (physical delete - removes from database) |
 
 ### Pagination
 

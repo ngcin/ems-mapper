@@ -190,8 +190,8 @@ public class DeleteByIdTest {
 
         assertTrue(exception.getMessage().contains("does not support logical delete") ||
                    exception.getCause().getMessage().contains("does not support logical delete"));
-        assertTrue(exception.getMessage().contains("Use removeById instead") ||
-                   exception.getCause().getMessage().contains("Use removeById instead"));
+        assertTrue(exception.getMessage().contains("Use hardDelete instead") ||
+                   exception.getCause().getMessage().contains("Use hardDeleteById instead"));
     }
 
     @Test

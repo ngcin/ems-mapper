@@ -19,9 +19,9 @@ import java.sql.ResultSet;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test cases for remove by entity conditions (remove method).
+ * Test cases for remove by entity conditions (hardDelete method).
  */
-public class RemoveTest {
+public class HardDeleteTest {
 
     private static SqlSessionFactory sqlSessionFactory;
     private SqlSession sqlSession;
@@ -100,7 +100,7 @@ public class RemoveTest {
         // Remove by title condition
         Article query = new Article();
         query.setTitle("Java Tutorial");
-        int result = articleMapper.remove(query);
+        int result = articleMapper.hardDelete(query);
         assertEquals(1, result);
 
         // Verify article is completely removed
@@ -131,7 +131,7 @@ public class RemoveTest {
         Article query = new Article();
         query.setTitle("Java Tutorial");
         query.setContent("Advanced");
-        int result = articleMapper.remove(query);
+        int result = articleMapper.hardDelete(query);
         assertEquals(1, result);
 
         // Verify only matching article is removed
@@ -149,7 +149,7 @@ public class RemoveTest {
         // Remove with non-matching condition
         Article query = new Article();
         query.setTitle("Python Tutorial");
-        int result = articleMapper.remove(query);
+        int result = articleMapper.hardDelete(query);
         assertEquals(0, result);
 
         // Verify article still exists
@@ -172,7 +172,7 @@ public class RemoveTest {
         // Remove by username
         User query = new User();
         query.setUsername("Alice");
-        int result = userMapper.remove(query);
+        int result = userMapper.hardDelete(query);
         assertEquals(1, result);
 
         // Verify user is removed
@@ -196,7 +196,7 @@ public class RemoveTest {
         // Remove by title - should delete both
         Article query = new Article();
         query.setTitle("Tutorial");
-        int result = articleMapper.remove(query);
+        int result = articleMapper.hardDelete(query);
         assertEquals(2, result);
 
         // Verify both are completely removed
