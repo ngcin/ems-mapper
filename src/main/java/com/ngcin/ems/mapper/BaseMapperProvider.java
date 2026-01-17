@@ -10,7 +10,9 @@ import org.apache.ibatis.jdbc.SQL;
 
 import java.io.Serializable;
 import java.lang.reflect.ParameterizedType;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -142,6 +144,114 @@ public class BaseMapperProvider extends SqlProvider {
         // Add all non-ID fields
         for (TableFieldInfo fieldInfo : tableInfo.getNonIdFields()) {
             sql.VALUES(fieldInfo.column(), buildValuePlaceholder(fieldInfo));
+        }
+
+        return sql.toString();
+    }
+
+    /**
+     * Generates batch INSERT SQL for multiple entities.
+     *
+     * <p>This method generates a single INSERT statement with multiple value sets:
+     * INSERT INTO table (col1, col2) VALUES (?, ?), (?, ?), ...
+     *
+     * <p>ID generation behavior:
+     * <ul>
+     *   <li>AUTO: Database generates IDs, MyBatis backfills them into entities</li>
+     *   <li>UUID: IDs are generated before INSERT if null</li>
+     *   <li>SNOWFLAKE: IDs are generated before INSERT if null</li>
+     * </ul>
+     *
+     * @param params parameter map containing the list of entities under key "list"
+     * @param context the provider context
+     * @return the batch INSERT SQL statement
+     * @throws IllegalArgumentException if the list is null or empty
+     */
+    public String insertBatch(Map<String, Object> params, ProviderContext context) {
+        // Step 1: Extract and validate parameters
+        @SuppressWarnings("unchecked")
+        List<Object> entities = (List<Object>) params.get("list");
+
+        if (entities == null || entities.isEmpty()) {
+            throw new IllegalArgumentException("Batch insert list cannot be null or empty");
+        }
+
+        // Step 2: Get entity metadata
+        Class<?> entityClass = getType(context);
+        TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
+        TableFieldInfo idField = tableInfo.idField();
+
+        // Step 3: ID pre-generation for UUID/SNOWFLAKE
+        if (idField != null && idField.idType() != IdType.AUTO) {
+            for (Object entity : entities) {
+                Object idValue = getFieldValue(idField.field(), entity);
+                if (idValue == null) {
+                    idValue = generateId(idField.idType(), idField.getPropertyType());
+                    setFieldValue(idField.field(), entity, idValue);
+                }
+            }
+        }
+
+        // Step 4: Initialize soft delete field to 0
+        TableFieldInfo deletedField = tableInfo.deletedField();
+        if (deletedField != null) {
+            for (Object entity : entities) {
+                Object value = getFieldValue(deletedField.field(), entity);
+                if (value == null) {
+                    int undeleted = Integer.parseInt(deletedField.notDeletedValue());
+                    setFieldValue(deletedField.field(), entity, undeleted);
+                }
+            }
+        }
+
+        // Step 5: Initialize version field to 0
+        TableFieldInfo versionField = tableInfo.versionField();
+        if (versionField != null) {
+            for (Object entity : entities) {
+                Object value = getFieldValue(versionField.field(), entity);
+                if (value == null) {
+                    setFieldValue(versionField.field(), entity, 0);
+                }
+            }
+        }
+
+        // Step 6: Collect fields to insert (non-@Ignore fields)
+        List<TableFieldInfo> insertFields = new ArrayList<>();
+
+        // Add ID field if not AUTO type
+        if (idField != null && idField.idType() != IdType.AUTO) {
+            insertFields.add(idField);
+        }
+
+        // Add all non-ID fields (getNonIdFields() already excludes @Ignore fields)
+        insertFields.addAll(tableInfo.getNonIdFields());
+
+        // Step 7: Build batch INSERT SQL
+        StringBuilder sql = new StringBuilder();
+        sql.append("INSERT INTO ").append(tableInfo.tableName()).append(" (");
+
+        // Column names
+        for (int i = 0; i < insertFields.size(); i++) {
+            if (i > 0) sql.append(", ");
+            sql.append(insertFields.get(i).column());
+        }
+        sql.append(") VALUES ");
+
+        // VALUES clauses - one per entity
+        for (int entityIndex = 0; entityIndex < entities.size(); entityIndex++) {
+            if (entityIndex > 0) sql.append(", ");
+            sql.append("(");
+
+            for (int fieldIndex = 0; fieldIndex < insertFields.size(); fieldIndex++) {
+                if (fieldIndex > 0) sql.append(", ");
+                TableFieldInfo field = insertFields.get(fieldIndex);
+
+                // Use indexed placeholder: #{list[0].propertyName}
+                sql.append("#{list[").append(entityIndex).append("].")
+                   .append(field.getProperty()).append("}");
+            }
+
+            sql.append(")");
         }
 
         return sql.toString();

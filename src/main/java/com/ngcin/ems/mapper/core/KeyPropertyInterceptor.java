@@ -10,6 +10,7 @@ import org.apache.ibatis.mapping.SqlCommandType;
 import org.apache.ibatis.plugin.*;
 import org.apache.ibatis.session.Configuration;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -63,15 +64,22 @@ public class KeyPropertyInterceptor implements Interceptor {
 
         String actualKeyProperty = idField.getProperty();
 
+        // Determine if this is a batch operation
+        boolean isBatchOperation = parameter instanceof Map &&
+                                   ((Map<?, ?>) parameter).containsKey("list");
+
         // For AUTO type: need useGeneratedKeys with correct keyProperty
         if (idField.idType() == IdType.AUTO) {
-            // If default "id" is already correct, no need to modify
-            if ("id".equals(actualKeyProperty)) {
+            // For batch operations, use "list.propertyName" format
+            String keyProperty = isBatchOperation ? "list." + actualKeyProperty : actualKeyProperty;
+
+            // If default "id" is already correct, check if we need to modify for batch
+            if ("id".equals(actualKeyProperty) && !isBatchOperation) {
                 return invocation.proceed();
             }
 
             // Create new MappedStatement with correct keyProperty
-            MappedStatement newMs = createMappedStatementWithKeyProperty(ms, actualKeyProperty);
+            MappedStatement newMs = createMappedStatementWithKeyProperty(ms, keyProperty);
             args[0] = newMs;
             return invocation.proceed();
         }
@@ -87,10 +95,19 @@ public class KeyPropertyInterceptor implements Interceptor {
     /**
      * Extracts the entity object from MyBatis parameter object.
      *
-     * @param parameter the parameter object (could be entity directly or a Map)
+     * <p>For batch operations, extracts the first entity from the list to determine
+     * the entity type and ID field name.
+     *
+     * @param parameter the parameter object (could be entity directly, a List, or a Map)
      * @return the entity object, or null if not found
      */
     private Object extractEntity(Object parameter) {
+        // Handle List parameter (batch operations)
+        if (parameter instanceof List) {
+            List<?> list = (List<?>) parameter;
+            return list.isEmpty() ? null : list.get(0);
+        }
+
         // Handle direct entity parameter
         if (!(parameter instanceof Map)) {
             return parameter;
@@ -99,11 +116,22 @@ public class KeyPropertyInterceptor implements Interceptor {
         // Handle MyBatis wrapped Map parameter
         @SuppressWarnings("unchecked")
         Map<String, Object> paramMap = (Map<String, Object>) parameter;
+
+        // Check for List in Map values (batch operations with @Param)
+        for (Object value : paramMap.values()) {
+            if (value instanceof List) {
+                List<?> list = (List<?>) value;
+                return list.isEmpty() ? null : list.get(0);
+            }
+        }
+
+        // Check for direct entity in Map values
         for (Object value : paramMap.values()) {
             if (value != null && !value.getClass().isPrimitive() && !(value instanceof String)) {
                 return value;
             }
         }
+
         return null;
     }
 
