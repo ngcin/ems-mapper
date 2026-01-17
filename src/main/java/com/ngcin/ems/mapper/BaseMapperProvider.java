@@ -33,49 +33,19 @@ public class BaseMapperProvider extends SqlProvider {
      * @return the INSERT SQL statement
      */
     public String insertSelective(Object entity) {
+        requireNonNull(entity, "entity");
+
         Class<?> entityClass = entity.getClass();
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
+        // Initialize entity fields (ID, version, soft delete)
+        initializeEntityForInsert(entity, tableInfo);
+
         SQL sql = new SQL().INSERT_INTO(tableInfo.tableName());
 
-        // Handle ID field based on generation strategy
-        if (tableInfo.idField() != null) {
-            TableFieldInfo idField = tableInfo.idField();
-            IdType idType = idField.idType();
-
-            if (idType == IdType.AUTO) {
-                // For AUTO, don't include ID in INSERT (database will generate it)
-                // Do nothing, skip adding ID field
-            } else {
-                // For UUID and SNOWFLAKE, generate ID before insert
-                Object idValue = getFieldValue(idField.field(), entity);
-                if (idValue == null) {
-                    idValue = generateId(idType, idField.getPropertyType());
-                    setFieldValue(idField.field(), entity, idValue);
-                }
-                sql.VALUES(idField.column(), buildValuePlaceholder(idField));
-            }
-        }
-
-        // Initialize deleted field to undeleted value if null
-        if (tableInfo.hasLogicDelete()) {
-            TableFieldInfo deletedField = tableInfo.deletedField();
-            Object deletedValue = getFieldValue(deletedField.field(), entity);
-            if (deletedValue == null) {
-                // Set to undeleted value (0)
-                int undeleted = Integer.parseInt(deletedField.notDeletedValue());
-                setFieldValue(deletedField.field(), entity, undeleted);
-            }
-        }
-
-        // Initialize version field to 0 if null
-        if (tableInfo.hasVersion()) {
-            TableFieldInfo versionField = tableInfo.versionField();
-            Object versionValue = getFieldValue(versionField.field(), entity);
-            if (versionValue == null) {
-                // Set to initial version (0)
-                setFieldValue(versionField.field(), entity, 0);
-            }
+        // Add ID field if not AUTO type
+        if (tableInfo.idField() != null && tableInfo.idField().idType() != IdType.AUTO) {
+            sql.VALUES(tableInfo.idField().column(), buildValuePlaceholder(tableInfo.idField()));
         }
 
         // Add only non-null fields
@@ -96,49 +66,19 @@ public class BaseMapperProvider extends SqlProvider {
      * @return the INSERT SQL statement
      */
     public String insert(Object entity) {
+        requireNonNull(entity, "entity");
+
         Class<?> entityClass = entity.getClass();
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
 
+        // Initialize entity fields (ID, version, soft delete)
+        initializeEntityForInsert(entity, tableInfo);
+
         SQL sql = new SQL().INSERT_INTO(tableInfo.tableName());
 
-        // Handle ID field based on generation strategy
-        if (tableInfo.idField() != null) {
-            TableFieldInfo idField = tableInfo.idField();
-            IdType idType = idField.idType();
-
-            if (idType == IdType.AUTO) {
-                // For AUTO, don't include ID in INSERT (database will generate it)
-                // Do nothing, skip adding ID field
-            } else {
-                // For UUID and SNOWFLAKE, generate ID before insert
-                Object idValue = getFieldValue(idField.field(), entity);
-                if (idValue == null) {
-                    idValue = generateId(idType, idField.getPropertyType());
-                    setFieldValue(idField.field(), entity, idValue);
-                }
-                sql.VALUES(idField.column(), buildValuePlaceholder(idField));
-            }
-        }
-
-        // Initialize deleted field to undeleted value if null
-        if (tableInfo.hasLogicDelete()) {
-            TableFieldInfo deletedField = tableInfo.deletedField();
-            Object deletedValue = getFieldValue(deletedField.field(), entity);
-            if (deletedValue == null) {
-                // Set to undeleted value (0)
-                int undeleted = Integer.parseInt(deletedField.notDeletedValue());
-                setFieldValue(deletedField.field(), entity, undeleted);
-            }
-        }
-
-        // Initialize version field to 0 if null
-        if (tableInfo.hasVersion()) {
-            TableFieldInfo versionField = tableInfo.versionField();
-            Object versionValue = getFieldValue(versionField.field(), entity);
-            if (versionValue == null) {
-                // Set to initial version (0)
-                setFieldValue(versionField.field(), entity, 0);
-            }
+        // Add ID field if not AUTO type
+        if (tableInfo.idField() != null && tableInfo.idField().idType() != IdType.AUTO) {
+            sql.VALUES(tableInfo.idField().column(), buildValuePlaceholder(tableInfo.idField()));
         }
 
         // Add all non-ID fields
@@ -168,7 +108,7 @@ public class BaseMapperProvider extends SqlProvider {
      * @throws IllegalArgumentException if the list is null or empty
      */
     public String insertBatch(Map<String, Object> params, ProviderContext context) {
-        // Step 1: Extract and validate parameters
+        // Extract and validate parameters
         @SuppressWarnings("unchecked")
         List<Object> entities = (List<Object>) params.get("list");
 
@@ -176,57 +116,28 @@ public class BaseMapperProvider extends SqlProvider {
             throw new IllegalArgumentException("Batch insert list cannot be null or empty");
         }
 
-        // Step 2: Get entity metadata
+        // Get entity metadata
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
-        TableFieldInfo idField = tableInfo.idField();
 
-        // Step 3: ID pre-generation for UUID/SNOWFLAKE
-        if (idField != null && idField.idType() != IdType.AUTO) {
-            for (Object entity : entities) {
-                Object idValue = getFieldValue(idField.field(), entity);
-                if (idValue == null) {
-                    idValue = generateId(idField.idType(), idField.getPropertyType());
-                    setFieldValue(idField.field(), entity, idValue);
-                }
-            }
+        // Initialize all entities (ID, version, soft delete)
+        for (Object entity : entities) {
+            initializeEntityForInsert(entity, tableInfo);
         }
 
-        // Step 4: Initialize soft delete field to 0
-        TableFieldInfo deletedField = tableInfo.deletedField();
-        if (deletedField != null) {
-            for (Object entity : entities) {
-                Object value = getFieldValue(deletedField.field(), entity);
-                if (value == null) {
-                    int undeleted = Integer.parseInt(deletedField.notDeletedValue());
-                    setFieldValue(deletedField.field(), entity, undeleted);
-                }
-            }
-        }
-
-        // Step 5: Initialize version field to 0
-        TableFieldInfo versionField = tableInfo.versionField();
-        if (versionField != null) {
-            for (Object entity : entities) {
-                Object value = getFieldValue(versionField.field(), entity);
-                if (value == null) {
-                    setFieldValue(versionField.field(), entity, 0);
-                }
-            }
-        }
-
-        // Step 6: Collect fields to insert (non-@Ignore fields)
+        // Collect fields to insert (non-@Ignore fields)
         List<TableFieldInfo> insertFields = new ArrayList<>();
 
         // Add ID field if not AUTO type
+        TableFieldInfo idField = tableInfo.idField();
         if (idField != null && idField.idType() != IdType.AUTO) {
             insertFields.add(idField);
         }
 
-        // Add all non-ID fields (getNonIdFields() already excludes @Ignore fields)
+        // Add all non-ID fields
         insertFields.addAll(tableInfo.getNonIdFields());
 
-        // Step 7: Build batch INSERT SQL
+        // Build batch INSERT SQL
         StringBuilder sql = new StringBuilder();
         sql.append("INSERT INTO ").append(tableInfo.tableName()).append(" (");
 
@@ -264,8 +175,11 @@ public class BaseMapperProvider extends SqlProvider {
      * @return the UPDATE SQL statement
      */
     public String updateById(Object entity) {
+        requireNonNull(entity, "entity");
+
         Class<?> entityClass = entity.getClass();
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
+        requireIdField(tableInfo);
 
         SQL sql = new SQL()
                 .UPDATE(tableInfo.tableName());
@@ -275,7 +189,7 @@ public class BaseMapperProvider extends SqlProvider {
             if (fieldInfo.isVersion() || fieldInfo.isDeleted()) {
                 continue;
             }
-            sql.SET(fieldInfo.column() + " = #{" + fieldInfo.getProperty() + "}");
+            sql.SET(buildSetClause(fieldInfo, null));
         }
 
         // Handle version field for optimistic locking
@@ -292,12 +206,12 @@ public class BaseMapperProvider extends SqlProvider {
 
         // WHERE clause
         TableFieldInfo idField = tableInfo.idField();
-        sql.WHERE(idField.column() + " = #{" + idField.getProperty() + "}");
+        sql.WHERE(buildWhereClause(idField, null));
 
         // Add version check in WHERE clause for optimistic locking
         if (tableInfo.hasVersion()) {
             TableFieldInfo versionField = tableInfo.versionField();
-            sql.WHERE(versionField.column() + " = #{" + versionField.getProperty() + "}");
+            sql.WHERE(buildWhereClause(versionField, null));
         }
 
         return sql.toString();
@@ -325,7 +239,7 @@ public class BaseMapperProvider extends SqlProvider {
 
             Object value = getFieldValue(fieldInfo.field(), entity);
             if (value != null) {
-                sql.SET(fieldInfo.column() + " = #{entity." + fieldInfo.getProperty() + "}");
+                sql.SET(buildSetClause(fieldInfo, "entity"));
             }
         }
 
@@ -343,12 +257,12 @@ public class BaseMapperProvider extends SqlProvider {
 
         // WHERE clause
         TableFieldInfo idField = tableInfo.idField();
-        sql.WHERE(idField.column() + " = #{entity." + idField.getProperty() + "}");
+        sql.WHERE(buildWhereClause(idField, "entity"));
 
         // Add version check in WHERE clause for optimistic locking
         if (tableInfo.hasVersion()) {
             TableFieldInfo versionField = tableInfo.versionField();
-            sql.WHERE(versionField.column() + " = #{entity." + versionField.getProperty() + "}");
+            sql.WHERE(buildWhereClause(versionField, "entity"));
         }
 
         return sql.toString();
@@ -362,8 +276,11 @@ public class BaseMapperProvider extends SqlProvider {
      * @return the SELECT BY ID SQL statement
      */
     public String getById(Object id, ProviderContext context) {
+        requireNonNull(id, "id");
+
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
+        requireIdField(tableInfo);
 
         SQL sql = new SQL()
                 .SELECT(buildSelectColumns(tableInfo))
@@ -473,8 +390,8 @@ public class BaseMapperProvider extends SqlProvider {
             sql.WHERE(softDeleteWhere);
         }
 
-        // Add LIMIT (SQL class doesn't support LIMIT, need to append manually)
-        return sql.toString() + " LIMIT " + DEFAULT_SELECT_ALL_LIMIT;
+        // Add LIMIT using helper method
+        return appendLimit(sql.toString(), DEFAULT_SELECT_ALL_LIMIT);
     }
 
     /**
@@ -540,8 +457,8 @@ public class BaseMapperProvider extends SqlProvider {
             sql.WHERE(entityWheres);
         }
 
-        // Add LIMIT 1
-        return sql.toString() + " LIMIT 1";
+        // Add LIMIT 1 using helper method
+        return appendLimit(sql.toString(), 1);
     }
 
     /**

@@ -4,6 +4,7 @@ import com.ngcin.ems.mapper.core.IdType;
 import com.ngcin.ems.mapper.core.MapperConsts;
 import com.ngcin.ems.mapper.ref.TableFieldInfo;
 import com.ngcin.ems.mapper.ref.TableInfo;
+import org.apache.ibatis.jdbc.SQL;
 
 import java.io.Serializable;
 import java.lang.reflect.Field;
@@ -166,11 +167,160 @@ public class SqlProvider {
     }
 
     /**
+     * Builds base SELECT SQL with soft delete condition.
+     * This template method reduces duplication in select methods.
+     *
+     * @param tableInfo the table metadata
+     * @return SQL builder with SELECT, FROM, and soft delete WHERE clause
+     */
+    protected SQL buildSelectBase(TableInfo tableInfo) {
+        SQL sql = new SQL()
+                .SELECT(buildSelectColumns(tableInfo))
+                .FROM(tableInfo.tableName());
+
+        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
+        if (softDeleteWhere != null) {
+            sql.WHERE(softDeleteWhere);
+        }
+        return sql;
+    }
+
+    /**
+     * Applies optimistic locking logic to UPDATE statements.
+     * Adds version increment in SET clause and version check in WHERE clause.
+     *
+     * @param sql the SQL builder
+     * @param tableInfo the table metadata
+     * @param entity the entity being updated
+     * @param prefix optional parameter prefix (e.g., "entity")
+     * @throws MapperException if version field is null
+     */
+    protected void applyVersionLocking(SQL sql, TableInfo tableInfo, Object entity, String prefix) {
+        if (!tableInfo.hasVersion()) {
+            return;
+        }
+
+        TableFieldInfo versionField = tableInfo.versionField();
+        Object currentVersion = getFieldValue(versionField.field(), entity);
+
+        requireNonNull(currentVersion, "Version field for optimistic locking");
+
+        // Increment version in SET clause
+        sql.SET(versionField.column() + " = " + versionField.column() + " + 1");
+
+        // Add version check in WHERE clause
+        sql.WHERE(buildWhereClause(versionField, prefix));
+    }
+
+    /**
+     * Appends LIMIT clause to SQL statement.
+     * Centralizes LIMIT handling for easier dialect-specific customization.
+     *
+     * @param sql the SQL statement
+     * @param limit the limit value
+     * @return SQL with LIMIT clause appended
+     */
+    protected String appendLimit(String sql, int limit) {
+        return sql + " LIMIT " + limit;
+    }
+
+    /**
+     * Validates that an object is not null.
+     *
+     * @param obj the object to check
+     * @param paramName the parameter name for error message
+     * @throws MapperException if object is null
+     */
+    protected void requireNonNull(Object obj, String paramName) {
+        if (obj == null) {
+            throw new MapperException(paramName + " cannot be null");
+        }
+    }
+
+    /**
+     * Validates that a TableInfo has an ID field.
+     *
+     * @param tableInfo the table metadata
+     * @throws MapperException if ID field is missing
+     */
+    protected void requireIdField(TableInfo tableInfo) {
+        if (tableInfo.idField() == null) {
+            throw new MapperException("Entity " + tableInfo.entityClass().getSimpleName()
+                + " must have an @Id field");
+        }
+    }
+
+    /**
+     * Builds SET clause for UPDATE statements.
+     * Example: "column_name = #{propertyName}" or "column_name = #{prefix.propertyName}"
+     *
+     * @param field the field metadata
+     * @param prefix optional parameter prefix (e.g., "entity", "et")
+     * @return SET clause string
+     */
+    protected String buildSetClause(TableFieldInfo field, String prefix) {
+        String property = prefix != null ? prefix + "." + field.getProperty() : field.getProperty();
+        return field.column() + " = #{" + property + "}";
+    }
+
+    /**
+     * Builds WHERE clause condition.
+     * Example: "column_name = #{propertyName}" or "column_name = #{prefix.propertyName}"
+     *
+     * @param field the field metadata
+     * @param prefix optional parameter prefix (e.g., "entity", "ew")
+     * @return WHERE clause string
+     */
+    protected String buildWhereClause(TableFieldInfo field, String prefix) {
+        String property = prefix != null ? prefix + "." + field.getProperty() : field.getProperty();
+        return field.column() + " = #{" + property + "}";
+    }
+
+    /**
+     * Initializes entity fields before insert (ID, version, soft delete).
+     * This method handles:
+     * - ID generation for UUID/SNOWFLAKE types (AUTO is handled by database)
+     * - Soft delete field initialization to undeleted value (0)
+     * - Version field initialization to 0
+     *
+     * @param entity the entity to initialize
+     * @param tableInfo the table metadata
+     */
+    protected void initializeEntityForInsert(Object entity, TableInfo tableInfo) {
+        // Handle ID generation for UUID/SNOWFLAKE
+        if (tableInfo.idField() != null && tableInfo.idField().idType() != IdType.AUTO) {
+            TableFieldInfo idField = tableInfo.idField();
+            Object idValue = getFieldValue(idField.field(), entity);
+            if (idValue == null) {
+                idValue = generateId(idField.idType(), idField.getPropertyType());
+                setFieldValue(idField.field(), entity, idValue);
+            }
+        }
+
+        // Initialize soft delete field to undeleted value
+        if (tableInfo.hasLogicDelete()) {
+            TableFieldInfo deletedField = tableInfo.deletedField();
+            if (getFieldValue(deletedField.field(), entity) == null) {
+                int undeleted = Integer.parseInt(deletedField.notDeletedValue());
+                setFieldValue(deletedField.field(), entity, undeleted);
+            }
+        }
+
+        // Initialize version field to 0
+        if (tableInfo.hasVersion()) {
+            TableFieldInfo versionField = tableInfo.versionField();
+            if (getFieldValue(versionField.field(), entity) == null) {
+                setFieldValue(versionField.field(), entity, 0);
+            }
+        }
+    }
+
+    /**
      * Gets field value from entity.
+     * Note: Field is already made accessible during metadata resolution in EntityClassResolver.
      */
     protected Object getFieldValue(Field field, Object entity) {
         try {
-            field.setAccessible(true);
             return field.get(entity);
         } catch (IllegalAccessException e) {
             throw new MapperException("Failed to get field value: " + field.getName(), e);
@@ -179,10 +329,10 @@ public class SqlProvider {
 
     /**
      * Sets field value on entity.
+     * Note: Field is already made accessible during metadata resolution in EntityClassResolver.
      */
     protected void setFieldValue(Field field, Object entity, Object value) {
         try {
-            field.setAccessible(true);
             field.set(entity, value);
         } catch (IllegalAccessException e) {
             throw new MapperException("Failed to set field value: " + field.getName(), e);
