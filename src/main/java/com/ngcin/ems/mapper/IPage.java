@@ -1,5 +1,7 @@
 package com.ngcin.ems.mapper;
 
+import com.ngcin.ems.mapper.core.Page;
+
 import java.util.List;
 
 public interface IPage<T> {
@@ -13,6 +15,8 @@ public interface IPage<T> {
     long getPages();
 
     List<T> getRecords();
+
+    Page<T> setRecords(List<T> records);
 
     boolean isHitCount();
 

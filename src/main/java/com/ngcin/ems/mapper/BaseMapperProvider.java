@@ -539,4 +539,38 @@ public class BaseMapperProvider extends SqlProvider {
         return sql.toString();
     }
 
+    /**
+     * Generates SELECT SQL for pagination with optional entity conditions.
+     *
+     * @param params  parameter map containing page and optional entity
+     * @param context the provider context
+     * @return the SELECT SQL statement
+     */
+    public String selectPage(Map<String, Object> params, ProviderContext context) {
+        Class<?> entityClass = getType(context);
+        TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
+
+        Object entity = params.get(MapperConsts.ENTITY_WHERE);
+
+        SQL sql = new SQL()
+                .SELECT(buildSelectColumns(tableInfo))
+                .FROM(tableInfo.tableName());
+
+        // Add soft delete condition
+        String softDeleteWhere = buildSoftDeleteWhere(tableInfo);
+        if (softDeleteWhere != null) {
+            sql.WHERE(softDeleteWhere);
+        }
+
+        // Add conditions from non-null entity fields if provided
+        if (entity != null) {
+            String[] entityWheres = buildEntityWheres(tableInfo, entity);
+            if (entityWheres.length > 0) {
+                sql.WHERE(entityWheres);
+            }
+        }
+
+        return sql.toString();
+    }
+
 }

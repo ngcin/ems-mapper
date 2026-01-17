@@ -1,6 +1,7 @@
 package com.ngcin.ems.mapper;
 
 import com.ngcin.ems.mapper.core.MapperConsts;
+import com.ngcin.ems.mapper.core.Page;
 import org.apache.ibatis.annotations.*;
 
 import java.io.Serializable;
@@ -16,6 +17,10 @@ public interface BaseMapper<T> {
     @InsertProvider(type = BaseMapperProvider.class, method = "insertSelective")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insertSelective(T entity);
+
+    @InsertProvider(type = BaseMapperProvider.class, method = "insertBatch")
+    @Options(useGeneratedKeys = true, keyProperty = "id")
+    int insertBatch(@Param("list") List<T> entities);
 
     @UpdateProvider(type = BaseMapperProvider.class, method = "updateById")
     int updateById(T entity);
@@ -53,4 +58,12 @@ public interface BaseMapper<T> {
     @DeleteProvider(type = BaseMapperProvider.class, method = "remove")
     int remove(@Param(MapperConsts.ENTITY_WHERE) T entity);
 
+    @SelectProvider(type = BaseMapperProvider.class, method = "selectPage")
+    List<T> selectPage(@Param(MapperConsts.PAGE) IPage<T> page, @Param(MapperConsts.ENTITY_WHERE) T query);
+
+    default IPage<T> page(@Param(MapperConsts.PAGE) IPage<T> page, @Param(MapperConsts.ENTITY_WHERE) T query) {
+        List<T> list = selectPage(page, query);
+        page.setRecords(list);
+        return page;
+    }
 }

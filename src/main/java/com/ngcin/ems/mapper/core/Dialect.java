@@ -4,35 +4,39 @@ public enum Dialect {
     MYSQL {
         @Override
         public String buildPaginationSql(String sql, long current, long size) {
-            return "";
+            long offset = (current - 1) * size;
+            return sql + " LIMIT " + offset + ", " + size;
         }
 
         @Override
         public String buildCountSql(String sql) {
-            return "";
+            return "SELECT COUNT(*) FROM (" + sql + ") AS _count_table";
         }
     },
     ORACLE {
         @Override
         public String buildPaginationSql(String sql, long current, long size) {
-            return "";
+            long offset = (current - 1) * size;
+            long endRow = current * size;
+            return "SELECT * FROM (SELECT ROWNUM AS rn, t.* FROM (" + sql + ") t WHERE ROWNUM <= " + endRow + ") WHERE rn > " + offset;
         }
 
         @Override
         public String buildCountSql(String sql) {
-            return "";
+            return "SELECT COUNT(*) FROM (" + sql + ")";
         }
 
     },
     POSTGRESQL {
         @Override
         public String buildPaginationSql(String sql, long current, long size) {
-            return "";
+            long offset = (current - 1) * size;
+            return sql + " LIMIT " + size + " OFFSET " + offset;
         }
 
         @Override
         public String buildCountSql(String sql) {
-            return "";
+            return "SELECT COUNT(*) FROM (" + sql + ") AS _count_table";
         }
 
     };

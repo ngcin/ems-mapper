@@ -15,6 +15,8 @@ import org.apache.ibatis.session.RowBounds;
 
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Pagination interceptor that automatically adds COUNT query and LIMIT clause.
@@ -34,11 +36,31 @@ import java.util.*;
 })
 public class PaginationInterceptor implements Interceptor {
 
+    /** Cached Field for BoundSql.additionalParameters to avoid repeated reflection */
+    private static final Field ADDITIONAL_PARAMETERS_FIELD;
+
+    /** Counter for generating unique MappedStatement IDs */
+    private static final AtomicLong COUNTER = new AtomicLong(0);
+
+    static {
+        Field field = null;
+        try {
+            field = BoundSql.class.getDeclaredField("additionalParameters");
+            field.setAccessible(true);
+        } catch (NoSuchFieldException e) {
+            // Field not available, will skip copying additional parameters
+        }
+        ADDITIONAL_PARAMETERS_FIELD = field;
+    }
+
     /** Dialect type for SQL generation. volatile for thread safety. */
-    private volatile Dialect dialect;
+    private volatile Dialect dialect = Dialect.MYSQL;
 
     /** When true, returns empty result if current page exceeds total pages. */
     private boolean overflow = false;
+
+    /** Cache for MappedStatements to avoid repeated creation */
+    private final ConcurrentHashMap<String, MappedStatement> msCache = new ConcurrentHashMap<>();
 
     /**
      * Intercepts Executor.query/update to apply pagination.
@@ -62,10 +84,20 @@ public class PaginationInterceptor implements Interceptor {
         SqlCommandType sqlCommandType = ms.getSqlCommandType();
 
         if (sqlCommandType == SqlCommandType.SELECT) {
-            Object parameterObject = parameter;
-            IPage<?> page = extractPage(parameterObject, null);
+            IPage<?> page = extractPage(parameter, null);
 
             if (page != null) {
+                // Validate page parameters
+                if (page.getSize() <= 0) {
+                    throw new IllegalArgumentException("Page size must be greater than 0, but was: " + page.getSize());
+                }
+                if (page.getCurrent() <= 0) {
+                    throw new IllegalArgumentException("Current page must be greater than 0, but was: " + page.getCurrent());
+                }
+
+                // Check once if page is a Page instance to avoid repeated instanceof checks
+                Page<?> pageImpl = (page instanceof Page<?>) ? (Page<?>) page : null;
+
                 BoundSql boundSql = ms.getBoundSql(parameter);
                 String originalSql = boundSql.getSql().trim();
 
@@ -73,37 +105,41 @@ public class PaginationInterceptor implements Interceptor {
                 Configuration configuration = ms.getConfiguration();
                 Dialect dialect = getDialect();
 
+                // Execute COUNT query
                 String countSql = dialect.buildCountSql(originalSql);
-                BoundSql countBoundSql = newBoundSql(configuration, countSql, parameterObject, boundSql);
+                BoundSql countBoundSql = newBoundSql(configuration, countSql, parameter, boundSql);
 
                 long total = executeCount(executor, countBoundSql, ms);
-                if (page instanceof Page<?> p) {
-                    p.setTotal(total);
+                if (pageImpl != null) {
+                    pageImpl.setTotal(total);
                 }
 
+                // Handle empty results
                 if (total == 0) {
-                    if (page instanceof Page<?> p) {
-                        p.setRecords(Collections.emptyList());
+                    if (pageImpl != null) {
+                        pageImpl.setRecords(Collections.emptyList());
                     }
                     return Collections.emptyList();
                 }
 
+                // Handle overflow
                 if (overflow && page.getCurrent() > 1) {
                     long pages = (total + page.getSize() - 1) / page.getSize();
                     if (page.getCurrent() > pages) {
-                        if (page instanceof Page<?> p) {
-                            p.setRecords(Collections.emptyList());
+                        if (pageImpl != null) {
+                            pageImpl.setRecords(Collections.emptyList());
                         }
                         return Collections.emptyList();
                     }
                 }
 
+                // Build pagination SQL
                 String pagedSql = dialect.buildPaginationSql(originalSql, page.getCurrent(), page.getSize());
-                BoundSql pagedBoundSql = newBoundSql(configuration, pagedSql, parameterObject, boundSql);
+                BoundSql pagedBoundSql = newBoundSql(configuration, pagedSql, parameter, boundSql);
 
-                // Create new MappedStatement for paged query
-                String pagedMsId = ms.getId() + "_PAGE";
-                MappedStatement pagedMs = createCountMappedStatement(configuration, pagedMsId, pagedBoundSql);
+                // Create or get cached MappedStatement for paged query
+                String pagedMsId = ms.getId() + "_PAGE_" + COUNTER.incrementAndGet();
+                MappedStatement pagedMs = getOrCreatePagedMappedStatement(ms, pagedMsId, pagedBoundSql);
 
                 // Replace args for paged query
                 args[0] = pagedMs;
@@ -111,19 +147,6 @@ public class PaginationInterceptor implements Interceptor {
         }
 
         return invocation.proceed();
-    }
-
-    protected Object getParameterObject(Object parameter) {
-        if (parameter instanceof Map) {
-            Map<?, ?> map = (Map<?, ?>) parameter;
-            if (map.containsKey(MapperConsts.ENTITY)) return map.get(MapperConsts.ENTITY);
-            if (map.containsKey(MapperConsts.ENTITY_WHERE)) return map.get(MapperConsts.ENTITY_WHERE);
-            if (map.containsKey(MapperConsts.PARAM_1)) return map.get(MapperConsts.PARAM_1);
-            for (Object value : map.values()) {
-                if (value != null) return value;
-            }
-        }
-        return parameter;
     }
 
     /**
@@ -169,15 +192,17 @@ public class PaginationInterceptor implements Interceptor {
         List<ParameterMapping> mappings = new ArrayList<>(original.getParameterMappings());
         BoundSql boundSql = new BoundSql(configuration, sql, mappings, parameterObject);
 
-        try {
-            Field additionalParamsField = BoundSql.class.getDeclaredField("additionalParameters");
-            additionalParamsField.setAccessible(true);
-            Map<String, Object> additionalParams = (Map<String, Object>) additionalParamsField.get(original);
-            Field targetField = BoundSql.class.getDeclaredField("additionalParameters");
-            targetField.setAccessible(true);
-            targetField.set(boundSql, new HashMap<>(additionalParams));
-        } catch (Exception e) {
-            // Preserve additional parameters is optional, continue without them
+        // Use cached field to avoid repeated reflection
+        if (ADDITIONAL_PARAMETERS_FIELD != null) {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> additionalParams = (Map<String, Object>) ADDITIONAL_PARAMETERS_FIELD.get(original);
+                if (additionalParams != null) {
+                    ADDITIONAL_PARAMETERS_FIELD.set(boundSql, new HashMap<>(additionalParams));
+                }
+            } catch (IllegalAccessException e) {
+                // Failed to copy additional parameters, continue without them
+            }
         }
 
         MetaObject sourceMeta = configurationMetaObject(original);
@@ -209,9 +234,9 @@ public class PaginationInterceptor implements Interceptor {
     @SuppressWarnings("unchecked")
     protected long executeCount(Executor executor, BoundSql countBoundSql, MappedStatement originalMs) {
         try {
-            // Create a new MappedStatement to avoid modifying the original
-            String countMsId = originalMs.getId() + "_COUNT";
-            MappedStatement countMs = createCountMappedStatement(
+            // Create a unique ID for count MappedStatement
+            String countMsId = originalMs.getId() + "_COUNT_" + COUNTER.incrementAndGet();
+            MappedStatement countMs = getOrCreateCountMappedStatement(
                 originalMs.getConfiguration(),
                 countMsId,
                 countBoundSql
@@ -227,41 +252,93 @@ public class PaginationInterceptor implements Interceptor {
                 }
             }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to execute count query", e);
+            throw new RuntimeException("Failed to execute count query for " + originalMs.getId() + ": " + e.getMessage(), e);
         }
         return 0;
     }
 
+    /**
+     * Gets or creates a cached MappedStatement for paged query.
+     */
+    protected MappedStatement getOrCreatePagedMappedStatement(MappedStatement originalMs, String id, BoundSql boundSql) {
+        return msCache.computeIfAbsent(id, key -> createPagedMappedStatement(originalMs, id, boundSql));
+    }
+
+    /**
+     * Gets or creates a cached MappedStatement for count query.
+     */
+    protected MappedStatement getOrCreateCountMappedStatement(Configuration config, String id, BoundSql boundSql) {
+        return msCache.computeIfAbsent(id, key -> createCountMappedStatement(config, id, boundSql));
+    }
+
+    /**
+     * Creates a new MappedStatement for paged query, preserving original result mappings.
+     */
+    protected MappedStatement createPagedMappedStatement(MappedStatement originalMs, String id, BoundSql boundSql) {
+        SqlSource sqlSource = new StaticSqlSource(originalMs.getConfiguration(), boundSql.getSql(), boundSql.getParameterMappings());
+
+        MappedStatement.Builder builder = new MappedStatement.Builder(
+            originalMs.getConfiguration(),
+            id,
+            sqlSource,
+            originalMs.getSqlCommandType()
+        );
+
+        builder.resource(originalMs.getResource())
+                .fetchSize(originalMs.getFetchSize())
+                .timeout(originalMs.getTimeout())
+                .statementType(originalMs.getStatementType())
+                .keyGenerator(originalMs.getKeyGenerator())
+                .keyProperty(originalMs.getKeyProperties() == null ? null : String.join(",", originalMs.getKeyProperties()))
+                .keyColumn(originalMs.getKeyColumns() == null ? null : String.join(",", originalMs.getKeyColumns()))
+                .databaseId(originalMs.getDatabaseId())
+                .lang(originalMs.getLang())
+                .resultOrdered(originalMs.isResultOrdered())
+                .resultSets(originalMs.getResultSets() == null ? null : String.join(",", originalMs.getResultSets()))
+                .resultMaps(originalMs.getResultMaps())
+                .flushCacheRequired(originalMs.isFlushCacheRequired())
+                .useCache(originalMs.isUseCache())
+                .cache(originalMs.getCache());
+
+        return builder.build();
+    }
+
     protected MappedStatement createCountMappedStatement(Configuration config, String id, BoundSql boundSql) {
-        String countSql = "SELECT COUNT(*) AS total FROM (" + boundSql.getSql() + ") AS _t";
-        List<ParameterMapping> newMappings = new ArrayList<>(boundSql.getParameterMappings());
-        SqlSource sqlSource = new StaticSqlSource(config, countSql, newMappings);
+        // boundSql already contains the COUNT SQL from Dialect.buildCountSql()
+        SqlSource sqlSource = new StaticSqlSource(config, boundSql.getSql(), boundSql.getParameterMappings());
+
+        // Create a simple inline result map for Long type
+        List<org.apache.ibatis.mapping.ResultMapping> resultMappings = new ArrayList<>();
+        org.apache.ibatis.mapping.ResultMap.Builder resultMapBuilder =
+            new org.apache.ibatis.mapping.ResultMap.Builder(
+                config,
+                id + "-Inline",
+                Long.class,
+                resultMappings,
+                true  // autoMapping
+            );
+        org.apache.ibatis.mapping.ResultMap resultMap = resultMapBuilder.build();
+        List<org.apache.ibatis.mapping.ResultMap> resultMaps = new ArrayList<>();
+        resultMaps.add(resultMap);
 
         MappedStatement.Builder builder = new MappedStatement.Builder(config, id, sqlSource, SqlCommandType.SELECT);
         builder.resource("internal")
-                .fetchSize(-1)
+                .fetchSize(null)
+                .timeout(null)
                 .statementType(org.apache.ibatis.mapping.StatementType.PREPARED)
                 .keyGenerator(org.apache.ibatis.executor.keygen.NoKeyGenerator.INSTANCE)
-                .keyProperty(null).keyColumn(null)
-                .databaseId(null).lang(null)
-                .resultOrdered(false).resultSets(null)
-                .flushCacheRequired(true).useCache(false)
+                .keyProperty(null)
+                .keyColumn(null)
+                .databaseId(null)
+                .lang(config.getDefaultScriptingLanguageInstance())
+                .resultOrdered(false)
+                .resultSets(null)
+                .resultMaps(resultMaps)
+                .flushCacheRequired(false)
+                .useCache(false)
                 .cache(null);
 
-        MappedStatement ms = builder.build();
-
-        try {
-            java.lang.reflect.Field resultTypeField = MappedStatement.class.getDeclaredField("resultType");
-            resultTypeField.setAccessible(true);
-            resultTypeField.set(ms, Long.class);
-
-            java.lang.reflect.Field resultMapIdField = MappedStatement.class.getDeclaredField("resultMapId");
-            resultMapIdField.setAccessible(true);
-            resultMapIdField.set(ms, "");
-        } catch (Exception e) {
-        }
-
-        return ms;
+        return builder.build();
     }
 
     protected MetaObject configurationMetaObject(Object object) {
@@ -272,8 +349,12 @@ public class PaginationInterceptor implements Interceptor {
      * Gets the dialect instance for the configured database type.
      *
      * @return the Dialect implementation
+     * @throws IllegalStateException if dialect is not configured
      */
     protected Dialect getDialect() {
+        if (this.dialect == null) {
+            throw new IllegalStateException("Dialect is not configured. Please set dialectType property in plugin configuration.");
+        }
         return this.dialect;
     }
 
