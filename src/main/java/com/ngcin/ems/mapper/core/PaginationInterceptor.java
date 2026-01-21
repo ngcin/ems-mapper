@@ -15,8 +15,6 @@ import org.apache.ibatis.session.RowBounds;
 
 import java.lang.reflect.Field;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Pagination interceptor that automatically adds COUNT query and LIMIT clause.
@@ -39,9 +37,6 @@ public class PaginationInterceptor implements Interceptor {
     /** Cached Field for BoundSql.additionalParameters to avoid repeated reflection */
     private static final Field ADDITIONAL_PARAMETERS_FIELD;
 
-    /** Counter for generating unique MappedStatement IDs */
-    private static final AtomicLong COUNTER = new AtomicLong(0);
-
     static {
         Field field = null;
         try {
@@ -58,9 +53,6 @@ public class PaginationInterceptor implements Interceptor {
 
     /** When true, returns empty result if current page exceeds total pages. */
     private boolean overflow = false;
-
-    /** Cache for MappedStatements to avoid repeated creation */
-    private final ConcurrentHashMap<String, MappedStatement> msCache = new ConcurrentHashMap<>();
 
     /**
      * Intercepts Executor.query/update to apply pagination.
@@ -138,8 +130,8 @@ public class PaginationInterceptor implements Interceptor {
                 BoundSql pagedBoundSql = newBoundSql(configuration, pagedSql, parameter, boundSql);
 
                 // Create or get cached MappedStatement for paged query
-                String pagedMsId = ms.getId() + "_PAGE_" + COUNTER.incrementAndGet();
-                MappedStatement pagedMs = getOrCreatePagedMappedStatement(ms, pagedMsId, pagedBoundSql);
+                String pagedMsId = ms.getId() + "_PAGE";
+                MappedStatement pagedMs = createPagedMappedStatement(ms, pagedMsId, pagedBoundSql);
 
                 // Replace args for paged query
                 args[0] = pagedMs;
@@ -235,8 +227,8 @@ public class PaginationInterceptor implements Interceptor {
     protected long executeCount(Executor executor, BoundSql countBoundSql, MappedStatement originalMs) {
         try {
             // Create a unique ID for count MappedStatement
-            String countMsId = originalMs.getId() + "_COUNT_" + COUNTER.incrementAndGet();
-            MappedStatement countMs = getOrCreateCountMappedStatement(
+            String countMsId = originalMs.getId() + "_COUNT";
+            MappedStatement countMs = createCountMappedStatement(
                 originalMs.getConfiguration(),
                 countMsId,
                 countBoundSql
@@ -255,20 +247,6 @@ public class PaginationInterceptor implements Interceptor {
             throw new RuntimeException("Failed to execute count query for " + originalMs.getId() + ": " + e.getMessage(), e);
         }
         return 0;
-    }
-
-    /**
-     * Gets or creates a cached MappedStatement for paged query.
-     */
-    protected MappedStatement getOrCreatePagedMappedStatement(MappedStatement originalMs, String id, BoundSql boundSql) {
-        return msCache.computeIfAbsent(id, key -> createPagedMappedStatement(originalMs, id, boundSql));
-    }
-
-    /**
-     * Gets or creates a cached MappedStatement for count query.
-     */
-    protected MappedStatement getOrCreateCountMappedStatement(Configuration config, String id, BoundSql boundSql) {
-        return msCache.computeIfAbsent(id, key -> createCountMappedStatement(config, id, boundSql));
     }
 
     /**

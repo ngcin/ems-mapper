@@ -29,30 +29,38 @@ public class BaseMapperProvider extends SqlProvider {
     }
 
     /**
+     * Initializes INSERT SQL with common setup.
+     */
+    private record InsertContext(SQL sql, TableInfo tableInfo) {}
+
+    private InsertContext initInsertSql(Object entity) {
+        requireNonNull(entity, "entity");
+        Class<?> entityClass = entity.getClass();
+        TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
+        initializeEntityForInsert(entity, tableInfo);
+
+        SQL sql = new SQL().INSERT_INTO(tableInfo.tableName());
+        addIdFieldIfNeeded(sql, tableInfo);
+        return new InsertContext(sql, tableInfo);
+    }
+
+    /**
      * Generates INSERT SQL for non-null fields only (selective insert).
      *
      * @param entity the entity to insert
      * @return the INSERT SQL statement
      */
     public String insertSelective(Object entity) {
-        requireNonNull(entity, "entity");
+        InsertContext ctx = initInsertSql(entity);
 
-        Class<?> entityClass = entity.getClass();
-        TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
-
-        initializeEntityForInsert(entity, tableInfo);
-
-        SQL sql = new SQL().INSERT_INTO(tableInfo.tableName());
-        addIdFieldIfNeeded(sql, tableInfo);
-
-        for (TableFieldInfo fieldInfo : tableInfo.getNonIdFields()) {
+        for (TableFieldInfo fieldInfo : ctx.tableInfo().getNonIdFields()) {
             Object value = getFieldValue(fieldInfo.field(), entity);
             if (value != null) {
-                sql.VALUES(fieldInfo.column(), buildValuePlaceholder(fieldInfo));
+                ctx.sql().VALUES(fieldInfo.column(), buildValuePlaceholder(fieldInfo));
             }
         }
 
-        return sql.toString();
+        return ctx.sql().toString();
     }
 
     /**
@@ -62,21 +70,13 @@ public class BaseMapperProvider extends SqlProvider {
      * @return the INSERT SQL statement
      */
     public String insert(Object entity) {
-        requireNonNull(entity, "entity");
+        InsertContext ctx = initInsertSql(entity);
 
-        Class<?> entityClass = entity.getClass();
-        TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
-
-        initializeEntityForInsert(entity, tableInfo);
-
-        SQL sql = new SQL().INSERT_INTO(tableInfo.tableName());
-        addIdFieldIfNeeded(sql, tableInfo);
-
-        for (TableFieldInfo fieldInfo : tableInfo.getNonIdFields()) {
-            sql.VALUES(fieldInfo.column(), buildValuePlaceholder(fieldInfo));
+        for (TableFieldInfo fieldInfo : ctx.tableInfo().getNonIdFields()) {
+            ctx.sql().VALUES(fieldInfo.column(), buildValuePlaceholder(fieldInfo));
         }
 
-        return sql.toString();
+        return ctx.sql().toString();
     }
 
     /**
@@ -298,16 +298,11 @@ public class BaseMapperProvider extends SqlProvider {
     }
 
     /**
-     * Generates SELECT SQL with dynamic WHERE conditions based on entity fields.
-     *
-     * @param params  parameter map containing the entity under key MapperConsts.ENTITY_WHERE
-     * @param context the provider context
-     * @return the SELECT SQL statement
+     * Builds SELECT SQL with entity conditions.
      */
-    public String selectList(Map<String, Object> params, ProviderContext context) {
+    private String buildSelectWithConditions(Map<String, Object> params, ProviderContext context, Integer limit) {
         Class<?> entityClass = getType(context);
         TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
-
         Object entity = params.get(MapperConsts.ENTITY_WHERE);
 
         SQL sql = new SQL()
@@ -316,7 +311,18 @@ public class BaseMapperProvider extends SqlProvider {
 
         addEntityConditions(sql, tableInfo, entity);
 
-        return sql.toString();
+        return limit != null ? appendLimit(sql.toString(), limit) : sql.toString();
+    }
+
+    /**
+     * Generates SELECT SQL with dynamic WHERE conditions based on entity fields.
+     *
+     * @param params  parameter map containing the entity under key MapperConsts.ENTITY_WHERE
+     * @param context the provider context
+     * @return the SELECT SQL statement
+     */
+    public String selectList(Map<String, Object> params, ProviderContext context) {
+        return buildSelectWithConditions(params, context, null);
     }
 
     /**
@@ -327,18 +333,7 @@ public class BaseMapperProvider extends SqlProvider {
      * @return the SELECT SQL statement with LIMIT 1
      */
     public String selectOne(Map<String, Object> params, ProviderContext context) {
-        Class<?> entityClass = getType(context);
-        TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
-
-        Object entity = params.get(MapperConsts.ENTITY_WHERE);
-
-        SQL sql = new SQL()
-                .SELECT(buildSelectColumns(tableInfo))
-                .FROM(tableInfo.tableName());
-
-        addEntityConditions(sql, tableInfo, entity);
-
-        return appendLimit(sql.toString(), 1);
+        return buildSelectWithConditions(params, context, 1);
     }
 
     /**
@@ -445,18 +440,7 @@ public class BaseMapperProvider extends SqlProvider {
      * @return the SELECT SQL statement
      */
     public String selectPage(Map<String, Object> params, ProviderContext context) {
-        Class<?> entityClass = getType(context);
-        TableInfo tableInfo = EntityClassResolver.resolve(entityClass);
-
-        Object entity = params.get(MapperConsts.ENTITY_WHERE);
-
-        SQL sql = new SQL()
-                .SELECT(buildSelectColumns(tableInfo))
-                .FROM(tableInfo.tableName());
-
-        addEntityConditions(sql, tableInfo, entity);
-
-        return sql.toString();
+        return buildSelectWithConditions(params, context, null);
     }
 
 }

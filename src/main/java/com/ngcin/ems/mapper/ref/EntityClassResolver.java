@@ -14,8 +14,10 @@ import org.apache.ibatis.type.JdbcType;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -80,8 +82,15 @@ public class EntityClassResolver {
         TableFieldInfo deletedField = null;
         List<TableFieldInfo> allFields = new ArrayList<>();
         List<TableFieldInfo> uniqueFields = new ArrayList<>();
+        Set<String> processedFieldNames = new HashSet<>();
 
         for (Field field : allDeclaredFields) {
+            // Skip duplicate field names (child class fields take precedence)
+            if (processedFieldNames.contains(field.getName())) {
+                continue;
+            }
+            processedFieldNames.add(field.getName());
+
             field.setAccessible(true);
 
             if (field.isAnnotationPresent(Ignore.class)) {

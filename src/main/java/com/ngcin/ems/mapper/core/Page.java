@@ -47,7 +47,7 @@ public class Page<T> implements IPage<T> {
         return this;
     }
 
-    public Page<T> setRecords(List<T> records) {
+    public IPage<T> setRecords(List<T> records) {
         this.records = records == null ? new ArrayList<>() : records;
         return this;
     }
@@ -128,11 +128,14 @@ public class Page<T> implements IPage<T> {
     public Page<T> addOrder(String... orders) {
         if (orders != null && orders.length > 0) {
             StringBuilder sb = new StringBuilder();
-            for (String order : orders) {
-                if (sb.length() > 0) {
+            if (this.orders != null && !this.orders.isEmpty()) {
+                sb.append(this.orders).append(",");
+            }
+            for (int i = 0; i < orders.length; i++) {
+                if (i > 0) {
                     sb.append(",");
                 }
-                sb.append(order);
+                sb.append(orders[i]);
             }
             this.orders = sb.toString();
         }

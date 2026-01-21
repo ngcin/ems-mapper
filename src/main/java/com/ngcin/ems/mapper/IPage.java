@@ -16,7 +16,7 @@ public interface IPage<T> {
 
     List<T> getRecords();
 
-    Page<T> setRecords(List<T> records);
+    IPage<T> setRecords(List<T> records);
 
     boolean isHitCount();
 

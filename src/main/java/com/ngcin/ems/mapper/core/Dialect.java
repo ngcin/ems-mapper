@@ -58,36 +58,4 @@ public enum Dialect {
      * @return 方言对应的sql
      */
     public abstract String buildCountSql(final String sql);
-
-    /**
-     * 获取统计的sql
-     *
-     * @param removeSelect 是否移除select与order by 部分
-     */
-    public String getCountPrefixSQL(boolean removeSelect) {
-        return " SELECT  COUNT(0) FROM ( ";
-    }
-
-    /**
-     * 获取统计的sql
-     *
-     * @param removeSelect 是否移除select与order by 部分
-     */
-    public String getCountSuffixSQL(boolean removeSelect) {
-        return " ) as t";
-    }
-
-    /**
-     * 获取统计的sql
-     *
-     * @param sql          原始sql
-     * @param removeSelect 是否移除select与order by 部分
-     * @return 方言对应的sql
-     */
-    public String buildCountSql(final String sql, boolean removeSelect) {
-        if (removeSelect) {
-            return buildCountSql(sql);
-        }
-        return "";
-    }
 }

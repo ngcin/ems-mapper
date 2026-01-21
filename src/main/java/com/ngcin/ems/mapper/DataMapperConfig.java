@@ -26,7 +26,7 @@ public class DataMapperConfig {
         return configuration -> {
             PaginationInterceptor pageInterceptor = new PaginationInterceptor();
             Properties properties = new Properties();
-            properties.setProperty("dialect", dialect);
+            properties.setProperty("dialectType", dialect);
             pageInterceptor.setProperties(properties);
             configuration.addInterceptor(pageInterceptor);
 

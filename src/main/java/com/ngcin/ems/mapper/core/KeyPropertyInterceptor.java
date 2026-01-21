@@ -136,15 +136,9 @@ public class KeyPropertyInterceptor implements Interceptor {
     }
 
     /**
-     * Creates a new MappedStatement with the specified keyProperty.
-     *
-     * @param original the original MappedStatement
-     * @param keyProperty the correct keyProperty name
-     * @return a new MappedStatement with updated keyProperty
+     * Creates base MappedStatement builder with common configuration.
      */
-    private MappedStatement createMappedStatementWithKeyProperty(
-            MappedStatement original, String keyProperty) {
-
+    private MappedStatement.Builder createBaseBuilder(MappedStatement original) {
         Configuration config = original.getConfiguration();
         MappedStatement.Builder builder = new MappedStatement.Builder(
             config,
@@ -153,16 +147,13 @@ public class KeyPropertyInterceptor implements Interceptor {
             original.getSqlCommandType()
         );
 
-        // Copy original configuration
         builder.resource(original.getResource())
                .fetchSize(original.getFetchSize())
                .statementType(original.getStatementType())
-               .keyProperty(keyProperty)           // Set correct keyProperty
-               .keyGenerator(Jdbc3KeyGenerator.INSTANCE)  // Enable auto-generated keys
                .databaseId(original.getDatabaseId())
                .lang(original.getLang())
                .resultOrdered(original.isResultOrdered())
-               .resultSets(null)  // Not needed for INSERT
+               .resultSets(null)
                .flushCacheRequired(original.isFlushCacheRequired())
                .useCache(original.isUseCache())
                .cache(original.getCache())
@@ -170,7 +161,22 @@ public class KeyPropertyInterceptor implements Interceptor {
                .parameterMap(original.getParameterMap())
                .resultMaps(original.getResultMaps());
 
-        return builder.build();
+        return builder;
+    }
+
+    /**
+     * Creates a new MappedStatement with the specified keyProperty.
+     *
+     * @param original the original MappedStatement
+     * @param keyProperty the correct keyProperty name
+     * @return a new MappedStatement with updated keyProperty
+     */
+    private MappedStatement createMappedStatementWithKeyProperty(
+            MappedStatement original, String keyProperty) {
+        return createBaseBuilder(original)
+               .keyProperty(keyProperty)
+               .keyGenerator(Jdbc3KeyGenerator.INSTANCE)
+               .build();
     }
 
     /**
@@ -181,31 +187,9 @@ public class KeyPropertyInterceptor implements Interceptor {
      * @return a new MappedStatement with keyGenerator set to NoKeyGenerator
      */
     private MappedStatement createMappedStatementWithoutKeyGenerator(MappedStatement original) {
-        Configuration config = original.getConfiguration();
-        MappedStatement.Builder builder = new MappedStatement.Builder(
-            config,
-            original.getId(),
-            original.getSqlSource(),
-            original.getSqlCommandType()
-        );
-
-        // Copy original configuration but disable key generation
-        builder.resource(original.getResource())
-               .fetchSize(original.getFetchSize())
-               .statementType(original.getStatementType())
-               .keyGenerator(org.apache.ibatis.executor.keygen.NoKeyGenerator.INSTANCE)  // Disable auto-generated keys
-               .databaseId(original.getDatabaseId())
-               .lang(original.getLang())
-               .resultOrdered(original.isResultOrdered())
-               .resultSets(null)  // Not needed for INSERT
-               .flushCacheRequired(original.isFlushCacheRequired())
-               .useCache(original.isUseCache())
-               .cache(original.getCache())
-               .timeout(original.getTimeout())
-               .parameterMap(original.getParameterMap())
-               .resultMaps(original.getResultMaps());
-
-        return builder.build();
+        return createBaseBuilder(original)
+               .keyGenerator(org.apache.ibatis.executor.keygen.NoKeyGenerator.INSTANCE)
+               .build();
     }
 
     @Override
