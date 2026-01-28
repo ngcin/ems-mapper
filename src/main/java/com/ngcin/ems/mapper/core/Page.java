@@ -8,36 +8,43 @@ import java.util.List;
 
 public class Page<T> implements IPage<T> {
 
-    private long current = 1;
+    private int current = 1;
 
-    private long size = 10;
+    private int size = 10;
 
     private long total = 0;
 
     private List<T> records = Collections.emptyList();
 
-    private boolean hitCount = false;
-
-    private boolean searchCount = true;
-
-    private boolean isAsc = false;
-
-    private String orders = "";
 
     public Page() {
     }
 
-    public Page(long current, long size) {
+    public Page(int current, int size) {
         this.current = current;
         this.size = size;
     }
 
-    public Page<T> setCurrent(long current) {
+    public Page(int current, int size, List<T> records) {
+        this.current = current;
+        this.size = size;
+        this.records = records;
+    }
+
+    public Page(int current, int size, long total, List<T> records) {
+        this.current = current;
+        this.size = size;
+        this.total = total;
+        this.records = records;
+    }
+
+
+    public Page<T> setCurrent(int current) {
         this.current = current > 0 ? current : 1;
         return this;
     }
 
-    public Page<T> setSize(long size) {
+    public Page<T> setSize(int size) {
         this.size = size > 0 ? size : 10;
         return this;
     }
@@ -52,33 +59,14 @@ public class Page<T> implements IPage<T> {
         return this;
     }
 
-    public Page<T> setHitCount(boolean hitCount) {
-        this.hitCount = hitCount;
-        return this;
-    }
-
-    public Page<T> setSearchCount(boolean searchCount) {
-        this.searchCount = searchCount;
-        return this;
-    }
-
-    public Page<T> setAsc(boolean asc) {
-        isAsc = asc;
-        return this;
-    }
-
-    public Page<T> setOrders(String orders) {
-        this.orders = orders;
-        return this;
-    }
 
     @Override
-    public long getCurrent() {
+    public int getCurrent() {
         return current;
     }
 
     @Override
-    public long getSize() {
+    public int getSize() {
         return size;
     }
 
@@ -100,45 +88,4 @@ public class Page<T> implements IPage<T> {
         return records;
     }
 
-    @Override
-    public boolean isHitCount() {
-        return hitCount;
-    }
-
-    @Override
-    public boolean isSearchCount() {
-        return searchCount;
-    }
-
-    @Override
-    public boolean isAsc() {
-        return isAsc;
-    }
-
-    @Override
-    public String getOrders() {
-        return orders;
-    }
-
-    @Override
-    public long offset() {
-        return (current - 1) * size;
-    }
-
-    public Page<T> addOrder(String... orders) {
-        if (orders != null && orders.length > 0) {
-            StringBuilder sb = new StringBuilder();
-            if (this.orders != null && !this.orders.isEmpty()) {
-                sb.append(this.orders).append(",");
-            }
-            for (int i = 0; i < orders.length; i++) {
-                if (i > 0) {
-                    sb.append(",");
-                }
-                sb.append(orders[i]);
-            }
-            this.orders = sb.toString();
-        }
-        return this;
-    }
 }

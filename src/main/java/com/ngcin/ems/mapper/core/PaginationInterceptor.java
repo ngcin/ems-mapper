@@ -167,7 +167,9 @@ public class PaginationInterceptor implements Interceptor {
             }
         }
         if (rowBounds instanceof IPage<?> page) return page;
-        return null;
+
+        // 从 ThreadLocal 获取分页信息 (PageHelper 方式)
+        return PageHelper.getLocalPage();
     }
 
     /**
