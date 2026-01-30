@@ -2,6 +2,8 @@ package com.ngcin.ems.mapper;
 
 import com.ngcin.ems.mapper.core.KeyPropertyInterceptor;
 import com.ngcin.ems.mapper.core.PaginationInterceptor;
+import com.ngcin.ems.mapper.json.JsonNodeValueTypeHandler;
+import com.ngcin.ems.mapper.json.TreeNodeTypeHandler;
 import org.mybatis.spring.boot.autoconfigure.ConfigurationCustomizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +18,9 @@ public class DataMapperConfig {
 
     @Value("${ems.mapper.dialect:mysql}")
     private String dialect;
+
+    @Value("${ems.mapper.json.enabled:true}")
+    private boolean jsonEnabled;
 
     public DataMapperConfig() {
         log.info("Init DataMapperConfig...");
@@ -32,6 +37,13 @@ public class DataMapperConfig {
 
             // Register KeyPropertyInterceptor to support custom ID field names
             configuration.addInterceptor(new KeyPropertyInterceptor());
+
+            // Register JSON TypeHandlers if enabled
+            if (jsonEnabled) {
+                configuration.getTypeHandlerRegistry().register(TreeNodeTypeHandler.class);
+                configuration.getTypeHandlerRegistry().register(JsonNodeValueTypeHandler.class);
+                log.debug("JSON TypeHandlers registered");
+            }
         };
     }
 }

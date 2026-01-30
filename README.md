@@ -13,6 +13,7 @@ A lightweight ORM-style data mapping framework built on top of MyBatis Spring Bo
 - **Optimistic Locking** - Version control support via `@Version` annotation
 - **Query by Entity** - Query methods that accept entity objects as conditions
 - **Dialect Support** - MySQL, Oracle, PostgreSQL
+- **JSON Support** - Store and retrieve JSON data via Jackson with automatic serialization
 
 ## Requirements
 
@@ -201,13 +202,15 @@ System.out.println("Records: " + result.getRecords());
 
 ## Configuration
 
-Configure the database dialect in `application.properties`:
+Configure in `application.properties`:
 
 ```properties
-# Default dialect is mysql
+# Database dialect (default: mysql)
+# Supported: mysql, oracle, postgresql
 ems.mapper.dialect=mysql
 
-# Supported dialects: mysql, oracle, postgresql
+# Enable JSON support (default: true)
+ems.mapper.json.enabled=true
 ```
 
 ## Example: Query by Entity
@@ -224,3 +227,107 @@ query.setUsername("john");
 query.setEmail("john@example.com");
 User user = userMapper.selectOne(query);
 ```
+
+## JSON Support
+
+ems-mapper provides built-in JSON support via Jackson library. JSON fields are automatically serialized to string on save and deserialized on read.
+
+JSON TypeHandlers are automatically registered when using `@EnableDataMapper`. To disable, set `ems.mapper.json.enabled=false`.
+
+### Using JsonNode
+
+Use Jackson's `JsonNode` type directly in your entity:
+
+```java
+@Table("t_article")
+public class Article {
+
+    @Id(type = IdType.AUTO)
+    private Long id;
+
+    private String title;
+
+    // JSON object field
+    private JsonNode metadata;
+
+    // JSON array field
+    private JsonNode tags;
+
+    // getters and setters
+}
+```
+
+Usage example:
+
+```java
+ObjectMapper objectMapper = new ObjectMapper();
+
+// Create entity with JSON object
+Article article = new Article();
+article.setTitle("Hello World");
+
+ObjectNode metadata = objectMapper.createObjectNode();
+metadata.put("author", "John");
+metadata.put("views", 100);
+article.setMetadata(metadata);
+
+// Create JSON array
+ArrayNode tags = objectMapper.createArrayNode();
+tags.add("java").add("mybatis").add("json");
+article.setTags(tags);
+
+// Insert - JSON is automatically serialized to string
+articleMapper.insert(article);
+```
+
+### Using JsonNodeValue (Lazy Loading)
+
+`JsonNodeValue` is a container that supports lazy parsing - JSON string is only parsed when accessed:
+
+```java
+@Table("t_config")
+public class Config {
+
+    @Id(type = IdType.AUTO)
+    private Long id;
+
+    private String name;
+
+    // Lazy-loaded JSON field
+    private JsonNodeValue settings;
+
+    // getters and setters
+}
+```
+
+Usage example:
+
+```java
+// Create from JsonNode
+ObjectNode settingsNode = objectMapper.createObjectNode();
+settingsNode.put("theme", "dark");
+settingsNode.put("language", "en");
+
+Config config = new Config();
+config.setName("user-preferences");
+config.setSettings(JsonNodeValue.from(settingsNode));
+
+configMapper.insert(config);
+
+// Read - JSON is lazily parsed only when get() is called
+Config loaded = configMapper.getById(1L);
+if (loaded.getSettings().isPresent()) {
+    JsonNode settings = loaded.getSettings().get();
+    String theme = settings.get("theme").asText();
+}
+```
+
+### Database Column Types
+
+- Store JSON as `VARCHAR` or `TEXT` for database-agnostic storage
+- For MySQL 8+, you can use native `JSON` column type
+- For PostgreSQL, you can use `JSONB` column type
+
+## Acknowledgments
+
+The JSON module is largely based on [mybatis-jackson](https://github.com/jneat/mybatis-jackson/).

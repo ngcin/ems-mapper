@@ -30,6 +30,14 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Jackson for JSON support (provided scope - consumer must include) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.15.3</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Test dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
