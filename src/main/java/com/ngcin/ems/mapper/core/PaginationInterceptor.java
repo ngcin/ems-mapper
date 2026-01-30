@@ -1,6 +1,7 @@
 package com.ngcin.ems.mapper.core;
 
 import com.ngcin.ems.mapper.IPage;
+import com.ngcin.ems.mapper.PageHelper;
 import org.apache.ibatis.executor.Executor;
 import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.mapping.MappedStatement;
@@ -109,7 +110,7 @@ public class PaginationInterceptor implements Interceptor {
                 // Handle empty results
                 if (total == 0) {
                     if (pageImpl != null) {
-                        pageImpl.setRecords(Collections.emptyList());
+                        pageImpl.records(Collections.emptyList());
                     }
                     return Collections.emptyList();
                 }
@@ -119,7 +120,7 @@ public class PaginationInterceptor implements Interceptor {
                     long pages = (total + page.getSize() - 1) / page.getSize();
                     if (page.getCurrent() > pages) {
                         if (pageImpl != null) {
-                            pageImpl.setRecords(Collections.emptyList());
+                            pageImpl.records(Collections.emptyList());
                         }
                         return Collections.emptyList();
                     }

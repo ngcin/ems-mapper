@@ -16,7 +16,6 @@ public class Page<T> implements IPage<T> {
 
     private List<T> records = Collections.emptyList();
 
-
     public Page() {
     }
 
@@ -54,7 +53,7 @@ public class Page<T> implements IPage<T> {
         return this;
     }
 
-    public IPage<T> setRecords(List<T> records) {
+    public IPage<T> records(List<T> records) {
         this.records = records == null ? new ArrayList<>() : records;
         return this;
     }

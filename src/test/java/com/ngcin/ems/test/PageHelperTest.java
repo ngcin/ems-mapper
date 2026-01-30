@@ -3,7 +3,7 @@ package com.ngcin.ems.test;
 import com.ngcin.ems.mapper.IPage;
 import com.ngcin.ems.mapper.MapperException;
 import com.ngcin.ems.mapper.core.Page;
-import com.ngcin.ems.mapper.core.PageHelper;
+import com.ngcin.ems.mapper.PageHelper;
 import com.ngcin.ems.test.entity.User;
 import com.ngcin.ems.test.mapper.UserMapper;
 import org.apache.ibatis.session.SqlSession;
@@ -15,7 +15,6 @@ import java.io.ByteArrayInputStream;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.List;
 import java.util.concurrent.*;
 
 import static org.junit.jupiter.api.Assertions.*;

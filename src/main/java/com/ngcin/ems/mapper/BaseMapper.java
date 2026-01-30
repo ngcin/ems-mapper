@@ -61,8 +61,6 @@ public interface BaseMapper<T> {
     List<T> selectPage(@Param(MapperConsts.PAGE) IPage<T> page, @Param(MapperConsts.ENTITY_WHERE) T query);
 
     default IPage<T> page(@Param(MapperConsts.PAGE) IPage<T> page, @Param(MapperConsts.ENTITY_WHERE) T query) {
-        List<T> list = selectPage(page, query);
-        page.setRecords(list);
-        return page;
+        return page.records(selectPage(page, query));
     }
 }

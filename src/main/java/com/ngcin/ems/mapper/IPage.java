@@ -14,6 +14,6 @@ public interface IPage<T> {
 
     List<T> getRecords();
 
-    IPage<T> setRecords(List<T> records);
+    IPage<T> records(List<T> records);
 
 }

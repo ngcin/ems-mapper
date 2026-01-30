@@ -129,7 +129,7 @@ class PageMethodTest {
         // Act - query first page using page() method
         Page<User> page = new Page<>(1, 10);
         IPage<User> result = userMapper.page(page, null);
-        page.setRecords(result.getRecords());
+        page.records(result.getRecords());
         // Assert
         assertNotNull(result, "Result should not be null");
         assertSame(page, result, "Should return the same page object");

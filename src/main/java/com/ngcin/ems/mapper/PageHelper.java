@@ -1,7 +1,7 @@
-package com.ngcin.ems.mapper.core;
+package com.ngcin.ems.mapper;
 
-import com.ngcin.ems.mapper.IPage;
-import com.ngcin.ems.mapper.MapperException;
+import com.ngcin.ems.mapper.core.ISelect;
+import com.ngcin.ems.mapper.core.Page;
 
 import java.util.List;
 
@@ -15,14 +15,14 @@ public class PageHelper {
         return LOCAL_PAGE.get();
     }
 
-    private static void setLocalPage(Page<?> page) {
+    private static void setLocalPage(IPage<?> page) {
         LOCAL_PAGE.set(page);
     }
 
     public static <T> IPage<T> page(int current, int size, ISelect<T> select) {
         try {
-            Page<T> pageQuery = new Page<>(current, size);
-            setLocalPage(pageQuery);
+            IPage<T> page = new Page<>(current, size);
+            setLocalPage(page);
             List<T> list = select.doSelect();
             if (null != list && list.size() == 1) {
                 Object pageInfo = list.get(0);
@@ -30,7 +30,7 @@ public class PageHelper {
                     return (Page<T>) pageInfo;
                 }
             }
-            return new Page<>(current, size, pageQuery.getTotal(), list);
+            return page.records(list);
         } catch (Exception ex) {
             throw new MapperException("Do page error : " + ex.getMessage(), ex);
         } finally {
